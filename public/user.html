@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clip Matters - User Guide</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            min-height: 100vh;
+            color: #333;
+            line-height: 1.7;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        /* Header */
+        .header {
+            margin-bottom: 30px;
+        }
+        
+        .banner {
+            max-width: 100%;
+            width: 100%;
+            height: auto;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            display: block;
+        }
+        
+        .header h1 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 2.8em;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+            font-size: 1.3em;
+            color: #666;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+        
+        /* Cards */
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h2 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 1.6em;
+            color: #11998e;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .card h2 .icon {
+            font-size: 1.4em;
+        }
+        
+        .card p {
+            color: #555;
+            margin-bottom: 15px;
+            font-size: 1.05em;
+        }
+        
+        /* Feature List */
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .feature-list li {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .feature-list .check {
+            color: #11998e;
+            font-size: 1.3em;
+            flex-shrink: 0;
+        }
+        
+        /* Hero Box */
+        .hero-box {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 25px 0;
+            text-align: center;
+        }
+        
+        .hero-box h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        
+        .hero-box p {
+            color: rgba(255,255,255,0.9);
+            font-size: 1.1em;
+            margin: 0;
+        }
+        
+        /* Search Types */
+        .search-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+        
+        .search-type {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .search-type:hover {
+            border-color: #11998e;
+        }
+        
+        .search-type .emoji {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+        }
+        
+        .search-type h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .search-type p {
+            color: #666;
+            font-size: 0.9em;
+            margin: 0;
+        }
+        
+        /* Step Cards */
+        .step-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .step-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4em;
+            font-weight: 700;
+            margin: 0 auto 15px;
+        }
+        
+        .step-card h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .step-card p {
+            color: #666;
+            font-size: 0.95em;
+            margin: 0;
+        }
+        
+        /* Highlight Box */
+        .highlight-box {
+            background: linear-gradient(135deg, #11998e15 0%, #38ef7d15 100%);
+            border-left: 4px solid #11998e;
+            padding: 20px 25px;
+            border-radius: 0 15px 15px 0;
+            margin: 20px 0;
+        }
+        
+        .highlight-box h4 {
+            color: #11998e;
+            margin-bottom: 10px;
+        }
+        
+        /* Example Box */
+        .example-box {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+        
+        .example-box .label {
+            font-size: 0.8em;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        
+        .example-box .search-term {
+            font-size: 1.2em;
+            color: #11998e;
+            font-weight: 600;
+        }
+        
+        .example-box .result {
+            margin-top: 10px;
+            color: #555;
+            font-size: 0.95em;
+        }
+        
+        /* Benefits Grid */
+        .benefits-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .benefit-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .benefit-item .emoji {
+            font-size: 1.5em;
+        }
+        
+        .benefit-item span {
+            font-size: 0.95em;
+        }
+        
+        /* Footer */
+        .footer {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-top: 30px;
+        }
+        
+        .footer img {
+            max-width: 120px;
+            margin-bottom: 15px;
+        }
+        
+        .footer p {
+            color: #666;
+            margin: 5px 0;
+        }
+        
+        .footer .contact {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .benefits-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .search-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+        
+        @media print {
+            body {
+                background: white;
+            }
+            
+            .card, .header, .footer {
+                box-shadow: none;
+                border: 1px solid #ddd;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="Pakistan Matters Banner 01.png" alt="Pakistan Matters Banner" class="banner">
+        </div>
+        
+        <!-- User Tutorial Video -->
+        <div class="card">
+            <h2><span class="icon">🎬</span> User Tutorial Video</h2>
+            <p>Watch this quick tutorial to learn how to search videos and create clips:</p>
+            <div style="text-align: center; margin: 20px 0;">
+                <video controls style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+                    <source src="User Video.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            <div class="highlight-box">
+                <h4>📋 What You'll Learn</h4>
+                <p>• How to search videos by words, topics, or speakers<br>• Understanding search results and timestamps<br>• Creating and sharing video clips<br>• Using advanced search features</p>
+            </div>
+        </div>
+        
+        <!-- Welcome -->
+        <div class="card">
+            <h2><span class="icon">👋</span> Welcome to Clip Matters!</h2>
+            <p><strong>Clip Matters</strong> makes finding content in videos as easy as searching on Google. No more watching hours of footage - just search and find exactly what you need in seconds!</p>
+            
+            <div class="hero-box">
+                <h3>🔍 Search Inside Videos</h3>
+                <p>Find any word, topic, or speaker across your entire video library instantly</p>
+            </div>
+            
+            <div class="benefits-grid">
+                <div class="benefit-item">
+                    <span class="emoji">⏱️</span>
+                    <span>Save hours of manual searching</span>
+                </div>
+                <div class="benefit-item">
+                    <span class="emoji">🎯</span>
+                    <span>Find exact moments instantly</span>
+                </div>
+                <div class="benefit-item">
+                    <span class="emoji">👤</span>
+                    <span>Search by speaker name</span>
+                </div>
+                <div class="benefit-item">
+                    <span class="emoji">✂️</span>
+                    <span>Create clips easily</span>
+                </div>
+                <div class="benefit-item">
+                    <span class="emoji">📄</span>
+                    <span>Download and Copy <b>(Bilingual Transcripts)</b></span>
+                </div>
+                <div class="benefit-item">
+                    <span class="emoji">📋</span>
+                    <span>Download and Copy <b>(Bilingual Summaries)</b></span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- What You Can Search -->
+        <div class="card">
+            <h2><span class="icon">🔎</span> Ways to Search</h2>
+            <p>Clip Matters offers multiple powerful search options:</p>
+            
+            <div class="search-grid">
+                <div class="search-type">
+                    <div class="emoji">💬</div>
+                    <h4>Search by Words</h4>
+                    <p>Type any word or phrase to find all videos mentioning it</p>
+                </div>
+                <div class="search-type">
+                    <div class="emoji">🧠</div>
+                    <h4>Search by Meaning</h4>
+                    <p>Search for topics - AI understands context and meaning</p>
+                </div>
+                <div class="search-type">
+                    <div class="emoji">👤</div>
+                    <h4>Search by Speaker</h4>
+                    <p>Find everything said by a specific person</p>
+                </div>
+                <div class="search-type">
+                    <div class="emoji">🎙️</div>
+                    <h4>Voice Search</h4>
+                    <p>Speak your search query instead of typing</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Search Examples -->
+        <div class="card">
+            <h2><span class="icon">💡</span> Search Examples</h2>
+            
+            <div class="example-box">
+                <div class="label">Example 1: Word Search</div>
+                <div class="search-term">"economy"</div>
+                <div class="result">→ Finds all moments where anyone says "economy" in any video</div>
+            </div>
+            
+            <div class="example-box">
+                <div class="label">Example 2: Meaning Search</div>
+                <div class="search-term">"discussion about financial policies"</div>
+                <div class="result">→ Finds relevant segments even if exact words aren't used (like "monetary decisions", "budget planning")</div>
+            </div>
+            
+            <div class="example-box">
+                <div class="label">Example 3: Speaker Search</div>
+                <div class="search-term">Speaker: "Hafiz Naeem"</div>
+                <div class="result">→ Shows all video segments where Hafiz Naeem is speaking</div>
+            </div>
+            
+            <div class="example-box">
+                <div class="label">Example 4: Combined Search</div>
+                <div class="search-term">"education" + Speaker: "Chairman"</div>
+                <div class="result">→ Finds where the Chairman talks about education topics</div>
+            </div>
+            
+            <div class="highlight-box">
+                <h4>✨ Smart Typo Handling</h4>
+                <p>Don't worry about spelling! Search for "Muhamad" and it will find "Muhammad", "Mohammed", etc.</p>
+            </div>
+        </div>
+        
+        <!-- How to Search -->
+        <div class="card">
+            <h2><span class="icon">🚀</span> How to Search</h2>
+            
+            <div class="step-grid">
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <h4>Go to Search Page</h4>
+                    <p>Click on the search icon or navigate to the search page</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <h4>Enter Your Query</h4>
+                    <p>Type keywords, phrases, or use voice input</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <h4>Apply Filters</h4>
+                    <p>Optionally filter by speaker, language, or date</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">4</div>
+                    <h4>View Results</h4>
+                    <p>Browse results grouped by video with timestamps</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Viewing Results -->
+        <div class="card">
+            <h2><span class="icon">📋</span> Understanding Your Results</h2>
+            
+            <p>When you search, you'll see results organized by video:</p>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">📺</span>
+                    <div>
+                        <strong>Video Title & Thumbnail</strong><br>
+                        <span style="color:#666">Easily identify which video contains your result</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">⏱️</span>
+                    <div>
+                        <strong>Timestamp</strong><br>
+                        <span style="color:#666">Exact time when the content appears (click to jump directly)</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">👤</span>
+                    <div>
+                        <strong>Speaker Name</strong><br>
+                        <span style="color:#666">Who is speaking at that moment</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">📝</span>
+                    <div>
+                        <strong>Transcript Preview</strong><br>
+                        <span style="color:#666">Text of what was said, with search terms highlighted</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">⭐</span>
+                    <div>
+                        <strong>Relevance Score</strong><br>
+                        <span style="color:#666">How closely the result matches your search</span>
+                    </div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Creating Clips -->
+        <div class="card">
+            <h2><span class="icon">✂️</span> Creating Video Clips</h2>
+            
+            <p>Found the perfect moment? Create a clip to share with your team!</p>
+            
+            <div class="step-grid">
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <h4>Open the Video</h4>
+                    <p>Click on any search result to open the video player</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <h4>Select Start & End</h4>
+                    <p>Mark the beginning and end of your desired clip</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <h4>Generate Clip</h4>
+                    <p>Click generate and wait for processing</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">4</div>
+                    <h4>Download & Share</h4>
+                    <p>Download the clip or share directly</p>
+                </div>
+            </div>
+            
+            <div class="highlight-box">
+                <h4>📱 Perfect for Social Media</h4>
+                <p>Create short clips from long videos for Twitter, Facebook, Instagram, or WhatsApp sharing. Your media team will love this!</p>
+            </div>
+        </div>
+        
+        <!-- Sharing with Media Team -->
+        <div class="card">
+            <h2><span class="icon">📤</span> Sharing with Your Team</h2>
+            
+            <p>Clip Matters makes collaboration easy:</p>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">🔗</span>
+                    <div>
+                        <strong>Share Direct Links</strong><br>
+                        <span style="color:#666">Send links that open the video at the exact timestamp</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">⬇️</span>
+                    <div>
+                        <strong>Download Clips</strong><br>
+                        <span style="color:#666">Download short clips for social media or presentations</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">📄</span>
+                    <div>
+                        <strong>Get Transcripts</strong><br>
+                        <span style="color:#666">Copy or export transcriptions for articles or captions</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">👥</span>
+                    <div>
+                        <strong>Team Collaboration</strong><br>
+                        <span style="color:#666">Everyone searches the same database - no duplicate work!</span>
+                    </div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Video Player Features -->
+        <div class="card">
+            <h2><span class="icon">▶️</span> Video Player Features</h2>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">📜</span>
+                    <div>
+                        <strong>Live Transcript</strong><br>
+                        <span style="color:#666">See the transcript scroll as the video plays - click any line to jump there</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">🎨</span>
+                    <div>
+                        <strong>Speaker Colors</strong><br>
+                        <span style="color:#666">Different speakers are highlighted in different colors</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">🔍</span>
+                    <div>
+                        <strong>In-Video Search</strong><br>
+                        <span style="color:#666">Search within the current video's transcript</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">⏩</span>
+                    <div>
+                        <strong>Speed Control</strong><br>
+                        <span style="color:#666">Watch at 1x, 1.5x, or 2x speed</span>
+                    </div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Tips -->
+        <div class="card">
+            <h2><span class="icon">💪</span> Pro Tips</h2>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">1️⃣</span>
+                    <div><strong>Use meaning search for broad topics</strong> - Search "political discussion" instead of specific words</div>
+                </li>
+                <li>
+                    <span class="check">2️⃣</span>
+                    <div><strong>Use word search for specific quotes</strong> - When you know exactly what was said</div>
+                </li>
+                <li>
+                    <span class="check">3️⃣</span>
+                    <div><strong>Combine speaker + topic</strong> - Find what a specific person said about a topic</div>
+                </li>
+                <li>
+                    <span class="check">4️⃣</span>
+                    <div><strong>Check your search history</strong> - Quickly repeat previous searches</div>
+                </li>
+                <li>
+                    <span class="check">5️⃣</span>
+                    <div><strong>Use voice search</strong> - Faster than typing, especially for Urdu queries</div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Need Help -->
+        <div class="card">
+            <h2><span class="icon">❓</span> Need Help?</h2>
+            
+            <p>If you have questions or need assistance:</p>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">👨‍💼</span>
+                    <div>Contact your team administrator for account issues</div>
+                </li>
+                <li>
+                    <span class="check">🎬</span>
+                    <div>Watch the video tutorial for a complete walkthrough</div>
+                </li>
+                <li>
+                    <span class="check">📧</span>
+                    <div>Reach out to support for technical problems</div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <img src="Swishtag logo1.png" alt="Swishtag Logo">
+            <p><strong>Clip Matters</strong> - Search Videos Like Never Before</p>
+            <p style="font-size: 0.9em;">Developed by Swishtag</p>
+            <div class="contact">
+                <p style="font-size: 0.85em; color: #888;">© 2026 Swishtag. All rights reserved.</p>
+                <p style="font-size: 0.85em; color: #888;">Document Version: 1.0 | User Guide</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

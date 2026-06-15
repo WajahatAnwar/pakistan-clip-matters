@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clip Matters Documentation</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #1a1a2e;
+            background: #ffffff;
+            font-size: 11pt;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+        
+        /* Cover Page */
+        .cover-page {
+            margin: -40px -40px 30px -40px;
+        }
+        
+        .cover-page .banner {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+        }
+        
+        /* Table of Contents */
+        .toc {
+            padding: 40px 0;
+        }
+        
+        .toc h2 {
+            color: #e94560;
+            border-bottom: 3px solid #e94560;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        
+        .toc-list {
+            list-style: none;
+        }
+        
+        .toc-list li {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .toc-list li a {
+            color: #1a1a2e;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .toc-list li span {
+            color: #666;
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4 {
+            color: #1a1a2e;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h1 {
+            font-size: 28px;
+            color: #e94560;
+            border-bottom: 3px solid #e94560;
+            padding-bottom: 10px;
+            page-break-before: always;
+        }
+        
+        h1:first-of-type {
+            page-break-before: avoid;
+        }
+        
+        h2 {
+            font-size: 22px;
+            color: #16213e;
+            border-left: 4px solid #e94560;
+            padding-left: 15px;
+        }
+        
+        h3 {
+            font-size: 18px;
+            color: #0f3460;
+        }
+        
+        h4 {
+            font-size: 16px;
+            color: #333;
+        }
+        
+        /* Paragraphs */
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 10pt;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        th {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        
+        /* Code blocks */
+        pre {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 9pt;
+            margin: 20px 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        code {
+            font-family: 'Fira Code', monospace;
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10pt;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        
+        /* Diagrams */
+        .diagram {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 9pt;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        
+        /* Info boxes */
+        .info-box {
+            background: linear-gradient(135deg, #e8f4fd, #d0e8f8);
+            border-left: 4px solid #0f3460;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .warning-box {
+            background: linear-gradient(135deg, #fff3cd, #ffe69c);
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        /* Feature cards */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .feature-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .feature-card h4 {
+            color: #e94560;
+            margin-top: 0;
+        }
+        
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 9pt;
+            font-weight: 600;
+            margin: 2px;
+        }
+        
+        .badge-primary { background: #e94560; color: white; }
+        .badge-secondary { background: #16213e; color: white; }
+        .badge-success { background: #28a745; color: white; }
+        .badge-info { background: #17a2b8; color: white; }
+        
+        /* Print styles - Single continuous page */
+        @media print {
+            body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+            
+            .container {
+                padding: 20px;
+            }
+            
+            h1, h2, h3, h4 {
+                page-break-before: avoid;
+                page-break-after: avoid;
+            }
+            
+            pre, table, .diagram, .feature-grid, .info-box, .warning-box {
+                page-break-inside: avoid;
+            }
+            
+            .cover-page {
+                margin: -20px -20px 30px -20px;
+            }
+        }
+        
+        @page {
+            size: auto;
+            margin: 10mm;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            text-align: center;
+            color: #666;
+            font-size: 10pt;
+        }
+        
+        /* Emoji styling */
+        .emoji {
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Cover Page -->
+        <div class="cover-page">
+            <img src="Clip matter  tech.svg" alt="Clip Matters Tech Banner" class="banner">
+        </div>
+
+        <!-- Table of Contents -->
+        <div class="toc">
+            <h2>📋 Table of Contents</h2>
+            <ol class="toc-list">
+                <li><a href="#executive-summary">Executive Summary</a></li>
+                <li><a href="#system-overview">System Overview</a></li>
+                <li><a href="#key-features">Key Features</a></li>
+                <li><a href="#architecture">Architecture Diagram</a></li>
+                <li><a href="#technology-stack">Technology Stack</a></li>
+                <li><a href="#user-roles">User Roles & Permissions</a></li>
+                <li><a href="#workflow">Complete Workflow</a></li>
+                <li><a href="#core-modules">Core Modules</a></li>
+                <li><a href="#external-services">External Services Integration</a></li>
+                <li><a href="#search-system">Search System</a></li>
+                <li><a href="#api-documentation">API Documentation</a></li>
+                <li><a href="#database-schema">Database Schema</a></li>
+                <li><a href="#frontend-components">Frontend Components</a></li>
+                <li><a href="#deployment">Deployment & Configuration</a></li>
+                <li><a href="#security">Security Features</a></li>
+                <li><a href="#video-tutorial">Video Tutorial</a></li>
+                <li><a href="#service-credentials">Service Credentials & Access</a></li>
+            </ol>
+        </div>
+
+        <!-- Executive Summary -->
+        <h1 id="executive-summary">📌 Executive Summary</h1>
+        
+        <p><strong>Clip Matters</strong> is an advanced AI-powered video intelligence platform designed to revolutionize how organizations manage, transcribe, search, and analyze video content. The platform automatically processes videos stored in Dropbox, uploads them to YouTube for playback, generates accurate transcriptions with speaker identification, and enables powerful semantic search across all video content.</p>
+        
+        <h2>Business Value</h2>
+        
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h4>⏱️ Time Savings</h4>
+                <p>Reduce hours of manual video review to seconds with AI-powered search capabilities.</p>
+            </div>
+            <div class="feature-card">
+                <h4>🎤 Speaker Recognition</h4>
+                <p>Automatically identify who said what in multi-speaker videos using voice fingerprinting.</p>
+            </div>
+            <div class="feature-card">
+                <h4>🌍 Multi-Language Support</h4>
+                <p>Supports Urdu, English, and other languages with automatic detection.</p>
+            </div>
+            <div class="feature-card">
+                <h4>✂️ Clip Generation</h4>
+                <p>Create and download specific video segments without external tools.</p>
+            </div>
+        </div>
+
+        <!-- System Overview -->
+        <h1 id="system-overview">🔍 System Overview</h1>
+        
+        <div class="diagram">
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CLIP MATTERS PLATFORM                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐               │
+│   │   Dropbox   │───▶│  Processing │───▶│   YouTube   │               │
+│   │   Storage   │    │   Pipeline  │    │   Hosting   │               │
+│   └─────────────┘    └──────┬──────┘    └─────────────┘               │
+│                             │                                          │
+│                             ▼                                          │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐               │
+│   │  AssemblyAI │◀──▶│ Transcription│───▶│   Pyannote  │               │
+│   │    (ASR)    │    │   Service   │    │  (Speaker)  │               │
+│   └─────────────┘    └──────┬──────┘    └─────────────┘               │
+│                             │                                          │
+│                             ▼                                          │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐               │
+│   │   Qdrant    │◀──▶│  Embeddings │◀──▶│  Elastic    │               │
+│   │  (Vectors)  │    │   Service   │    │   Search    │               │
+│   └─────────────┘    └─────────────┘    └─────────────┘               │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+        </div>
+
+        <!-- Key Features -->
+        <h1 id="key-features">⭐ Key Features</h1>
+        
+        <h2>1. 📤 Video Management</h2>
+        <ul>
+            <li>Automatic video import from Dropbox</li>
+            <li>Bulk video processing capabilities</li>
+            <li>Progress tracking and status monitoring</li>
+            <li>Automatic YouTube upload (unlisted privacy)</li>
+        </ul>
+        
+        <h2>2. 🎤 Transcription & Speaker Identification</h2>
+        <ul>
+            <li><strong>AssemblyAI</strong> for accurate speech-to-text conversion</li>
+            <li><strong>Pyannote AI</strong> for speaker diarization and identification</li>
+            <li>Voice sample training for known speakers</li>
+            <li>Multi-language support (Urdu, English, auto-detect)</li>
+        </ul>
+        
+        <h2>3. 🔎 Elastic Search</h2>
+        <ul>
+            <li><strong>Semantic Search:</strong> Find content by meaning, not just keywords</li>
+            <li><strong>Fuzzy Matching:</strong> Handles typos and spelling variations</li>
+            <li><strong>Speaker Search:</strong> Find all segments where a specific person spoke</li>
+            <li><strong>Time-Range Filtering:</strong> Search within specific video timestamps</li>
+            <li><strong>Multi-Keyword Search:</strong> OR-logic search with multiple terms</li>
+        </ul>
+        
+        <h2>4. ✂️ Video Clip Generation</h2>
+        <ul>
+            <li>Create clips from specific timestamps</li>
+            <li>Download individual segments</li>
+            <li>Timeline-based clip selection</li>
+            <li>Browser-based video trimming (FFmpeg.wasm)</li>
+        </ul>
+        
+        <h2>5. 📊 Analytics Dashboard</h2>
+        <ul>
+            <li>Video processing statistics</li>
+            <li>Search analytics and trends</li>
+            <li>Most searched keywords tracking</li>
+            <li>User activity monitoring</li>
+        </ul>
+
+        <!-- Architecture -->
+        <h1 id="architecture">🏗️ Architecture Diagram</h1>
+        
+        <div class="diagram">
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              FRONTEND (React + Inertia.js)                  │
+├────────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │  Search Page │  │ Results Page │  │  Video Page  │  │  Dashboard   │   │
+│  │              │  │  (Paginated) │  │  (Player)    │  │  (Admin)     │   │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘   │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                          BACKEND (Laravel 11 / PHP 8.2)                    │
+├────────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐         │
+│  │  VideoController │  │ YoutubeController│  │  ProfileController│         │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘         │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────┐     │
+│  │                        SERVICES LAYER                             │     │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ │     │
+│  │  │DropboxSvc   │ │GoogleApiSvc │ │AssemblyAiSvc│ │SpeakerTagSvc│ │     │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ │     │
+│  └──────────────────────────────────────────────────────────────────┘     │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────┐     │
+│  │                         JOBS (Queue)                              │     │
+│  │  ┌────────────────────┐  ┌────────────────────────────────────┐  │     │
+│  │  │  ProcessVideoJob   │  │  GenerateVideoEmbeddingJob         │  │     │
+│  │  │  (Main Pipeline)   │  │  (Vector Generation)               │  │     │
+│  │  └────────────────────┘  └────────────────────────────────────┘  │     │
+│  └──────────────────────────────────────────────────────────────────┘     │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        EXTERNAL SERVICES                                    │
+├────────────────────────────────────────────────────────────────────────────┤
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────────┐ │
+│  │  Dropbox   │ │  YouTube   │ │ AssemblyAI │ │  Pyannote  │ │  Qdrant  │ │
+│  │  (Storage) │ │  (Player)  │ │   (ASR)    │ │ (Speakers) │ │ (Vectors)│ │
+│  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └──────────┘ │
+└────────────────────────────────────────────────────────────────────────────┘
+        </div>
+
+        <!-- Technology Stack -->
+        <h1 id="technology-stack">🛠️ Technology Stack</h1>
+        
+        <h2>Backend Technologies</h2>
+        <table>
+            <tr><th>Technology</th><th>Purpose</th><th>Version</th></tr>
+            <tr><td><strong>PHP</strong></td><td>Server-side language</td><td>8.2+</td></tr>
+            <tr><td><strong>Laravel</strong></td><td>PHP Framework</td><td>11.x</td></tr>
+            <tr><td><strong>MySQL</strong></td><td>Relational Database</td><td>8.0+</td></tr>
+            <tr><td><strong>Redis</strong></td><td>Queue & Cache</td><td>7.x</td></tr>
+            <tr><td><strong>Laravel Queue</strong></td><td>Background Jobs</td><td>-</td></tr>
+        </table>
+        
+        <h2>Frontend Technologies</h2>
+        <table>
+            <tr><th>Technology</th><th>Purpose</th><th>Version</th></tr>
+            <tr><td><strong>React</strong></td><td>UI Framework</td><td>18.x</td></tr>
+            <tr><td><strong>Inertia.js</strong></td><td>SPA Bridge</td><td>1.x</td></tr>
+            <tr><td><strong>Material-UI</strong></td><td>Component Library</td><td>5.x</td></tr>
+            <tr><td><strong>Vite</strong></td><td>Build Tool</td><td>5.x</td></tr>
+            <tr><td><strong>i18next</strong></td><td>Internationalization</td><td>-</td></tr>
+            <tr><td><strong>FFmpeg.wasm</strong></td><td>Browser Video Processing</td><td>-</td></tr>
+        </table>
+        
+        <h2>External Services</h2>
+        <table>
+            <tr><th>Service</th><th>Purpose</th><th>Features</th></tr>
+            <tr><td><strong>Dropbox</strong></td><td>Video Storage</td><td>OAuth, Business/Team accounts</td></tr>
+            <tr><td><strong>YouTube</strong></td><td>Video Playback</td><td>Upload API, Embedding</td></tr>
+            <tr><td><strong>AssemblyAI</strong></td><td>Transcription</td><td>ASR, Speaker diarization</td></tr>
+            <tr><td><strong>Pyannote</strong></td><td>Speaker ID</td><td>Voice matching, Voiceprints</td></tr>
+            <tr><td><strong>Qdrant</strong></td><td>Vector Database</td><td>Similarity search</td></tr>
+            <tr><td><strong>Railway</strong></td><td>Search API Hosting</td><td>FastAPI deployment</td></tr>
+        </table>
+
+        <!-- User Roles -->
+        <h1 id="user-roles">👥 User Roles & Permissions</h1>
+        
+        <h2>Admin Role</h2>
+        <ul>
+            <li>Full dashboard access with analytics</li>
+            <li>Video management (upload, process, delete)</li>
+            <li>Voice sample management for speaker training</li>
+            <li>User management (create, edit, delete users)</li>
+            <li>System settings configuration</li>
+            <li>View all search history across users</li>
+        </ul>
+        
+        <h2>User Role</h2>
+        <ul>
+            <li>Search across all processed videos</li>
+            <li>View and play videos</li>
+            <li>Generate video clips from timestamps</li>
+            <li>Download video segments</li>
+            <li>View personal search history</li>
+            <li>Profile management</li>
+        </ul>
+
+        <!-- Workflow -->
+        <h1 id="workflow">🔄 Complete Workflow</h1>
+        
+        <h2>Phase 1: Video Ingestion</h2>
+        <div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐
+│                    VIDEO INGESTION WORKFLOW                      │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: Admin selects video from Dropbox
+         │
+         ▼
+Step 2: System creates Video record (status: pending)
+         │
+         ▼
+Step 3: ProcessVideoJob dispatched to queue
+         │
+         ▼
+Step 4: Download video from Dropbox to local storage
+         │
+         ▼
+Step 5: Extract audio from video (FFmpeg)
+         │
+         ▼
+Step 6: Upload video to YouTube (unlisted)
+         │
+         ▼
+Step 7: Send audio to AssemblyAI for transcription
+         │
+         ▼
+Step 8: Send audio to Pyannote for speaker identification
+         │
+         ▼
+Step 9: Merge transcript + speaker data
+         │
+         ▼
+Step 10: Save all data to Video model
+         │
+         ▼
+Step 11: Mark video as completed
+        </div>
+        
+        <h2>Phase 2: Embedding Generation</h2>
+        <div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐
+│                  EMBEDDING GENERATION WORKFLOW                   │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: Admin triggers embedding generation
+         │
+         ▼
+Step 2: GenerateVideoEmbedding job dispatched
+         │
+         ▼
+Step 3: Parse identification_data + speakers_data
+         │
+         ▼
+Step 4: Enrich segments with speaker + text
+         │
+         ▼
+Step 5: Send to Railway FastAPI service
+         │
+         ▼
+Step 6: Generate embeddings (sentence-transformers)
+         │
+         ▼
+Step 7: Store vectors in Qdrant collection
+         │
+         ▼
+Step 8: Update VideoEmbedding status: completed
+        </div>
+        
+        <h2>Phase 3: User Search</h2>
+        <div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐
+│                       SEARCH WORKFLOW                            │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: User enters search query
+         │
+         ├──────────────────┬───────────────────┐
+         ▼                  ▼                   ▼
+    Semantic Mode      Keyword Mode       Speaker Mode
+    (query text)       (words array)      (speaker name)
+         │                  │                   │
+         └──────────────────┴───────────────────┘
+                            │
+                            ▼
+Step 2: Laravel sends request to Railway API
+         │
+         ▼
+Step 3: Railway performs dual search:
+         ├── Semantic: Vector similarity search
+         └── Keyword: Fuzzy text matching
+         │
+         ▼
+Step 4: Merge and rank results
+         │
+         ▼
+Step 5: Laravel groups results by video
+         │
+         ▼
+Step 6: Apply pagination (10 videos/page)
+         │
+         ▼
+Step 7: Log search to SearchLog
+         │
+         ▼
+Step 8: Return results to frontend
+        </div>
+
+        <!-- Core Modules -->
+        <h1 id="core-modules">📦 Core Modules</h1>
+        
+        <h2>1. ProcessVideoJob</h2>
+        <p><strong>Location:</strong> <code>app/Jobs/ProcessVideoJob.php</code></p>
+        <p><strong>Purpose:</strong> Main processing pipeline for new videos</p>
+        <p><strong>Key Fields Populated:</strong></p>
+        <ul>
+            <li><code>youtube_video_id</code>, <code>youtube_url</code></li>
+            <li><code>transcript_id</code>, <code>speakers_data</code></li>
+            <li><code>diarization_data</code>, <code>identification_data</code></li>
+            <li><code>language_detected</code>, <code>audio_duration_seconds</code></li>
+        </ul>
+        
+        <h2>2. GenerateVideoEmbedding</h2>
+        <p><strong>Location:</strong> <code>app/Jobs/GenerateVideoEmbedding.php</code></p>
+        <p><strong>Purpose:</strong> Generate searchable embeddings for video transcript</p>
+        <p><strong>Process:</strong></p>
+        <ol>
+            <li>Parse identification_data (speaker timing)</li>
+            <li>Parse speakers_data (transcript text)</li>
+            <li>Enrich segments by matching timestamps</li>
+            <li>Send to FastAPI embedding service</li>
+            <li>Store vectors in Qdrant</li>
+        </ol>
+        
+        <h2>3. DropboxService</h2>
+        <p><strong>Location:</strong> <code>app/Services/DropboxService.php</code></p>
+        <p><strong>Capabilities:</strong> OAuth authentication, list folders/files, stream large downloads, generate temporary links, handle team/business accounts</p>
+        
+        <h2>4. GoogleApiService</h2>
+        <p><strong>Location:</strong> <code>app/Services/GoogleApiService.php</code></p>
+        <p><strong>Capabilities:</strong> YouTube OAuth authentication, video upload (resumable), token refresh handling, privacy setting management</p>
+        
+        <h2>5. AssemblyAiService</h2>
+        <p><strong>Location:</strong> <code>app/Services/AssemblyAiService.php</code></p>
+        <p><strong>Capabilities:</strong> Audio upload, transcription submission, speaker diarization, polling for completion, Pyannote integration</p>
+        
+        <h2>6. SpeakerTaggingService</h2>
+        <p><strong>Location:</strong> <code>app/Services/SpeakerTaggingService.php</code></p>
+        <p><strong>Purpose:</strong> Map generic speakers (A, B, C) to actual names using timestamp overlap and majority voting</p>
+
+        <!-- Search System -->
+        <h1 id="search-system">🔎 Search System</h1>
+        
+        <h2>Search Modes</h2>
+        <table>
+            <tr><th>Mode</th><th>Parameter</th><th>Description</th><th>Use Case</th></tr>
+            <tr><td><strong>Semantic</strong></td><td><code>query</code></td><td>Meaning-based search using embeddings</td><td>"Find discussions about economy"</td></tr>
+            <tr><td><strong>Keyword</strong></td><td><code>words[]</code></td><td>Exact/fuzzy word matching</td><td>["inflation", "prices"]</td></tr>
+            <tr><td><strong>Speaker</strong></td><td><code>speaker</code></td><td>Filter by speaker name</td><td>"Hafiz Naeem"</td></tr>
+            <tr><td><strong>Combined</strong></td><td>All</td><td>Multi-filter search</td><td>All filters together</td></tr>
+        </table>
+        
+        <h2>Elastic Features</h2>
+        <ul>
+            <li><strong>Fuzzy Matching:</strong> "Muhamad" matches "Muhammad"</li>
+            <li><strong>Typo Tolerance:</strong> "nueral" matches "neural"</li>
+            <li><strong>Partial Matching:</strong> "learn" matches "learning"</li>
+            <li><strong>N-gram Similarity:</strong> Character-level matching</li>
+            <li><strong>Query Caching:</strong> Repeated queries served from cache</li>
+        </ul>
+        
+        <h2>Pagination Response</h2>
+        <pre><code>{
+  "success": true,
+  "grouped_by_video": [...],
+  "total_videos": 45,
+  "total_segments": 234,
+  "current_page": 1,
+  "per_page": 10,
+  "total_pages": 5,
+  "has_next_page": true,
+  "has_prev_page": false,
+  "search_metadata": {
+    "response_time_ms": 156,
+    "elastic_features": {
+      "fuzzy_matching": true,
+      "typo_tolerance": true,
+      "semantic_search": true
+    }
+  }
+}</code></pre>
+
+        <!-- API Documentation -->
+        <h1 id="api-documentation">📡 API Documentation</h1>
+        
+        <h2>Video Management APIs</h2>
+        <table>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+            <tr><td>GET</td><td><code>/user/videos</code></td><td>List user's videos</td></tr>
+            <tr><td>GET</td><td><code>/user/videos/{video}</code></td><td>Get video details</td></tr>
+            <tr><td>POST</td><td><code>/user/videos/{video}/track</code></td><td>Start processing</td></tr>
+            <tr><td>POST</td><td><code>/user/videos/bulk-track</code></td><td>Bulk process videos</td></tr>
+            <tr><td>DELETE</td><td><code>/user/videos/{video}</code></td><td>Delete video</td></tr>
+        </table>
+        
+        <h2>Search APIs</h2>
+        <table>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+            <tr><td>POST</td><td><code>/videos/embeddings/search</code></td><td>Main search endpoint</td></tr>
+            <tr><td>GET</td><td><code>/user/search-history</code></td><td>Get user's search history</td></tr>
+        </table>
+        
+        <h2>Search Request Parameters</h2>
+        <pre><code>interface SearchRequest {
+  query?: string;           // Semantic search text
+  words?: string[];         // Keyword array
+  speaker?: string;         // Speaker filter
+  title?: string;           // Video title filter
+  language?: string;        // Language filter
+  video_id?: number;        // Specific video filter
+  min_score?: number;       // Minimum relevance (0-1)
+  top_k?: number;           // Max results from service
+  page?: number;            // Page number (1-based)
+  per_page?: number;        // Results per page (max 50)
+  time_range?: {
+    start?: number;         // Start time (seconds)
+    end?: number;           // End time (seconds)
+  };
+}</code></pre>
+        
+        <h2>Clip Generation APIs</h2>
+        <table>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+            <tr><td>POST</td><td><code>/user/clips/generate</code></td><td>Generate clip from video</td></tr>
+            <tr><td>GET</td><td><code>/user/clips/list</code></td><td>List available clips</td></tr>
+            <tr><td>GET</td><td><code>/user/clips/download/{filename}</code></td><td>Download clip</td></tr>
+            <tr><td>GET</td><td><code>/user/clips/stream/{filename}</code></td><td>Stream clip</td></tr>
+            <tr><td>DELETE</td><td><code>/user/clips/delete</code></td><td>Delete clip</td></tr>
+        </table>
+
+        <!-- Database Schema -->
+        <h1 id="database-schema">🗄️ Database Schema</h1>
+        
+        <h2>Videos Table</h2>
+        <pre><code>CREATE TABLE videos (
+    id BIGINT PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id),
+    dropbox_path VARCHAR(500),
+    filename VARCHAR(255),
+    extension VARCHAR(10),
+    size_mb DECIMAL(10,2),
+    title VARCHAR(255),
+    description TEXT,
+    
+    -- Processing Status
+    processing_status ENUM('pending','processing','completed','failed'),
+    processing_error TEXT,
+    processing_started_at TIMESTAMP,
+    processing_completed_at TIMESTAMP,
+    
+    -- YouTube Integration
+    youtube_video_id VARCHAR(50),
+    youtube_url VARCHAR(255),
+    youtube_privacy VARCHAR(20),
+    
+    -- Transcription
+    transcript_id VARCHAR(100),
+    transcript_text LONGTEXT,
+    language_detected VARCHAR(10),
+    audio_duration_seconds INT,
+    confidence DECIMAL(5,4),
+    
+    -- Speaker Data
+    speakers_count INT,
+    speakers_data JSON,
+    diarization_data JSON,
+    identification_data JSON,
+    speaker_mapping JSON,
+    pyannote_job_id VARCHAR(100),
+    
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);</code></pre>
+        
+        <h2>Video Embeddings Table</h2>
+        <pre><code>CREATE TABLE video_embeddings (
+    id BIGINT PRIMARY KEY,
+    video_id BIGINT REFERENCES videos(id),
+    status ENUM('pending','processing','completed','failed'),
+    qdrant_collection VARCHAR(100),
+    segments_count INT,
+    vector_dimensions INT DEFAULT 384,
+    error_message TEXT,
+    processing_started_at TIMESTAMP,
+    processing_completed_at TIMESTAMP,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);</code></pre>
+        
+        <h2>Search Logs Table</h2>
+        <pre><code>CREATE TABLE search_logs (
+    id BIGINT PRIMARY KEY,
+    user_id BIGINT,
+    query VARCHAR(1000),
+    word VARCHAR(200),
+    speaker VARCHAR(200),
+    video_id BIGINT,
+    results_count INT,
+    videos_count INT,
+    min_score DECIMAL(3,2),
+    response_time_ms INT,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    search_type VARCHAR(50),
+    filters JSON,
+    created_at TIMESTAMP
+);</code></pre>
+
+        <!-- Frontend Components -->
+        <h1 id="frontend-components">🖥️ Frontend Components</h1>
+        
+        <h2>User-Facing Pages</h2>
+        <table>
+            <tr><th>Component</th><th>Path</th><th>Description</th></tr>
+            <tr><td><strong>SearchPage</strong></td><td><code>/user/search-page</code></td><td>Main search interface with voice input</td></tr>
+            <tr><td><strong>SearchedPage</strong></td><td><code>/user/searched-items</code></td><td>Paginated search results</td></tr>
+            <tr><td><strong>MainVideoPage</strong></td><td><code>/user/video-page/{id}</code></td><td>Video player with transcript</td></tr>
+            <tr><td><strong>ProfilePage</strong></td><td><code>/user/profile</code></td><td>User profile settings</td></tr>
+        </table>
+        
+        <h2>Admin Pages</h2>
+        <table>
+            <tr><th>Component</th><th>Path</th><th>Description</th></tr>
+            <tr><td><strong>Dashboard</strong></td><td><code>/admin/dashboard</code></td><td>Analytics & statistics</td></tr>
+            <tr><td><strong>VideoManagement</strong></td><td><code>/admin/video-management</code></td><td>Video list & processing</td></tr>
+            <tr><td><strong>VoiceSample</strong></td><td><code>/admin/voice-sample</code></td><td>Speaker voice training</td></tr>
+            <tr><td><strong>UserManagement</strong></td><td><code>/admin/user-management</code></td><td>User CRUD operations</td></tr>
+            <tr><td><strong>Settings</strong></td><td><code>/admin/settings</code></td><td>System configuration</td></tr>
+        </table>
+        
+        <h2>Key UI Features</h2>
+        <ul>
+            <li><strong>Voice Search:</strong> Speech recognition for hands-free search</li>
+            <li><strong>Search Mode Toggle:</strong> Semantic 🧠 / Keyword 📝 / Speaker 👤</li>
+            <li><strong>Paginated Results:</strong> Navigate through large result sets</li>
+            <li><strong>Timeline Clips:</strong> Visual clip selection on timeline</li>
+            <li><strong>Download Manager:</strong> Generate and download video segments</li>
+            <li><strong>Multi-language UI:</strong> i18next integration for translations</li>
+        </ul>
+
+        <!-- Deployment -->
+        <h1 id="deployment">🚀 Deployment & Configuration</h1>
+        
+        <h2>Environment Variables</h2>
+        <pre><code># Application
+APP_NAME="Clip Matters"
+APP_ENV=production
+APP_KEY=base64:...
+APP_URL=https://your-domain.com
+
+# Database
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=clip_matters
+DB_USERNAME=user
+DB_PASSWORD=password
+
+# Dropbox OAuth
+DROPBOX_CLIENT_ID=your_client_id
+DROPBOX_CLIENT_SECRET=your_secret
+DROPBOX_REDIRECT_URI=https://your-domain.com/dropbox/callback
+
+# Google/YouTube OAuth
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_secret
+GOOGLE_REDIRECT_URI=https://your-domain.com/auth/google/callback
+
+# AssemblyAI
+ASSEMBLYAI_API_KEY=your_api_key
+
+# Pyannote
+PYANNOTE_API_KEY=sk_...
+
+# Embedding Service (Railway)
+PYTHON_EMBEDDING_SERVICE_URL=https://web-production-xxx.up.railway.app
+EMBEDDING_API_KEY=your_api_key
+
+# Queue
+QUEUE_CONNECTION=redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379</code></pre>
+        
+        <h2>Queue Worker Setup</h2>
+        <pre><code># Start queue worker for video processing
+php artisan queue:work --queue=default --timeout=3600 --memory=512
+
+# For production (supervisor configuration)
+[program:clip-matters-worker]
+command=php /path/to/artisan queue:work --sleep=3 --tries=1 --timeout=3600
+numprocs=2
+autostart=true
+autorestart=true</code></pre>
+
+        <!-- Security -->
+        <h1 id="security">🔒 Security Features</h1>
+        
+        <ul>
+            <li><strong>API Key Authentication:</strong> All embedding service calls require X-API-Key header</li>
+            <li><strong>Rate Limiting:</strong> 100 requests per 60 seconds per IP</li>
+            <li><strong>OAuth 2.0:</strong> Secure token-based authentication for Dropbox/YouTube</li>
+            <li><strong>CSRF Protection:</strong> All forms protected with CSRF tokens</li>
+            <li><strong>Role-Based Access:</strong> Admin and User roles with distinct permissions</li>
+            <li><strong>Input Validation:</strong> Pydantic/Laravel validation on all inputs</li>
+            <li><strong>Encrypted Tokens:</strong> OAuth tokens stored encrypted in database</li>
+        </ul>
+        
+        <h2>Health Check Endpoints</h2>
+        <table>
+            <tr><th>Endpoint</th><th>Description</th></tr>
+            <tr><td><code>/api/health</code></td><td>Application health status</td></tr>
+            <tr><td>Railway <code>/health</code></td><td>Embedding service status</td></tr>
+            <tr><td>Railway <code>/stats</code></td><td>Qdrant collection statistics</td></tr>
+        </table>
+        
+        <h2>Performance Metrics</h2>
+        <table>
+            <tr><th>Metric</th><th>Target</th><th>Description</th></tr>
+            <tr><td>Search Response</td><td>&lt; 500ms</td><td>Time to return search results</td></tr>
+            <tr><td>Video Processing</td><td>&lt; 5 min</td><td>End-to-end for 10-min video</td></tr>
+            <tr><td>Embedding Generation</td><td>&lt; 2 min</td><td>Per video with 100 segments</td></tr>
+            <tr><td>Concurrent Searches</td><td>100/min</td><td>Supported search rate</td></tr>
+        </table>
+
+        <!-- Video Tutorial -->
+        <h1 id="video-tutorial">🎬 Video Tutorial</h1>
+        
+        <p>Watch the complete platform walkthrough tutorial to understand how to use Clip Matters effectively:</p>
+        
+        <div class="info-box" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 25px; border-radius: 10px; margin: 20px 0;">
+            <h3 style="color: #e94560; margin-bottom: 15px;">📺 Platform Tutorial Video</h3>
+            <p style="margin-bottom: 15px;">This comprehensive tutorial covers:</p>
+            <ul style="margin-bottom: 20px;">
+                <li>Video upload and processing workflow</li>
+                <li>Search functionality (Semantic, Keyword, Speaker)</li>
+                <li>Clip generation and download</li>
+                <li>Admin dashboard features</li>
+            </ul>
+            <p><strong>🔗 Tutorial Link:</strong> <a href="https://www.awesomescreenshot.com/video/48634907?key=518a73b5fa6acc1444b1939b1cff0464" target="_blank" style="color: #ff6b6b; text-decoration: underline;">https://www.awesomescreenshot.com/video/48634907</a></p>
+        </div>
+
+<!-- Credentials Moved -->
+        <h1 id="service-credentials">🔐 Service Credentials & Access</h1>
+        
+        <div class="warning-box" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+            <strong>⚠️ Confidential Information Relocated:</strong> All credentials have been moved to a separate secure document.
+        </div>
+        
+        <div
+            style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border-left: 4px solid #764ba2; padding: 20px 25px; border-radius: 0 15px 15px 0; margin: 20px 0;">
+            <h3 style="color: #764ba2; margin-bottom: 10px;">📄 Access Credentials Document</h3>
+            <p>All service credentials, admin panel access, and login information have been moved to:</p>
+            <p style="margin-top: 15px;"><strong>📎 File:</strong> <a href="creds.html" target="_blank"
+                    style="color: #667eea; font-weight: 600;">creds.html</a></p>
+            <p style="margin-top: 10px; font-size: 0.95em; color: #666;">This document contains:</p>
+            <ul style="margin-top: 10px; margin-left: 20px; color: #666;">
+                <li>Admin Panel Access Credentials</li>
+                <li>User Panel Access Credentials</li>
+                <li>External Service Credentials (AssemblyAI, Railway, Dropbox, etc.)</li>
+                <li>Quick Reference Links</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        // Print instructions
+        console.log('To save as PDF: Press Ctrl+P (or Cmd+P on Mac) and select "Save as PDF"');
+    </script>
+</body>
+</html>

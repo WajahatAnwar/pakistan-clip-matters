@@ -1,0 +1,195 @@
+2026-04-21T14:10:52.667678642Z [inf]  Starting Container
+2026-04-21T14:10:52.888523028Z [inf]  Starting Container
+2026-04-21T14:10:53.688554323Z [inf]  Starting Container
+2026-04-21T14:10:53.921655644Z [err]  2026-04-21 14:10:53,867 - __main__ - INFO - Using OpenAI embeddings: text-embedding-3-large (dim=3072)
+2026-04-21T14:10:53.921663894Z [err]  2026-04-21 14:10:53,873 - __main__ - INFO - Connecting to Qdrant...
+2026-04-21T14:10:53.921667894Z [err]  2026-04-21 14:10:53,882 - __main__ - INFO - Connected to Qdrant successfully
+2026-04-21T14:10:54.373026770Z [inf]  Starting Container
+2026-04-21T14:10:54.509586684Z [err]  2026-04-21 14:10:54,506 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+2026-04-21T14:10:54.509590884Z [err]  2026-04-21 14:10:54,507 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:54.510516632Z [err]  2026-04-21 14:10:54,509 - __main__ - INFO - Collection 'video_transcript_segments' already exists
+2026-04-21T14:10:54.703963985Z [err]  2026-04-21 14:10:53,968 - __main__ - INFO - Using OpenAI embeddings: text-embedding-3-large (dim=3072)
+2026-04-21T14:10:54.703969043Z [err]  2026-04-21 14:10:53,975 - __main__ - INFO - Connecting to Qdrant...
+2026-04-21T14:10:54.703972917Z [err]  2026-04-21 14:10:53,984 - __main__ - INFO - Connected to Qdrant successfully
+2026-04-21T14:10:54.703975999Z [err]  2026-04-21 14:10:54,592 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+2026-04-21T14:10:54.703979572Z [err]  2026-04-21 14:10:54,648 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:54.703983553Z [err]  2026-04-21 14:10:54,649 - __main__ - INFO - Collection 'video_transcript_segments' already exists
+2026-04-21T14:10:54.860551227Z [err]  2026-04-21 14:10:54,849 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:54.860553785Z [err]  2026-04-21 14:10:54,849 - __main__ - INFO - Skipping startup index creation (ENSURE_INDEXES_ON_STARTUP=false)
+2026-04-21T14:10:54.875322382Z [err]  2026-04-21 14:10:54,871 - __main__ - INFO - Starting FastAPI Video Elastic Search Service on port 8080...
+2026-04-21T14:10:54.875327085Z [err]  2026-04-21 14:10:54,871 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io
+2026-04-21T14:10:54.875329992Z [err]  2026-04-21 14:10:54,871 - __main__ - INFO - Collections: video_transcript_segments, text_embeddings
+2026-04-21T14:10:54.875333499Z [err]  2026-04-21 14:10:54,871 - __main__ - INFO - Features: Fuzzy search, typo tolerance, query caching
+2026-04-21T14:10:54.887308531Z [err]  INFO:     Started server process [1]
+2026-04-21T14:10:54.887313009Z [err]  INFO:     Waiting for application startup.
+2026-04-21T14:10:54.887316053Z [err]  2026-04-21 14:10:54,884 - __main__ - INFO - Starting up Video Transcript Search API...
+2026-04-21T14:10:54.887324797Z [err]  2026-04-21 14:10:54,884 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-so...
+2026-04-21T14:10:54.887327526Z [err]  INFO:     Application startup complete.
+2026-04-21T14:10:54.887331755Z [err]  INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+2026-04-21T14:10:55.009527443Z [err]  INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+2026-04-21T14:10:55.009568513Z [err]  2026-04-21 14:10:54,715 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:55.009571243Z [err]  2026-04-21 14:10:54,716 - __main__ - INFO - Skipping startup index creation (ENSURE_INDEXES_ON_STARTUP=false)
+2026-04-21T14:10:55.009573893Z [err]  2026-04-21 14:10:54,740 - __main__ - INFO - Starting FastAPI Video Elastic Search Service on port 8080...
+2026-04-21T14:10:55.009577943Z [err]  2026-04-21 14:10:54,740 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io
+2026-04-21T14:10:55.009581093Z [err]  2026-04-21 14:10:54,741 - __main__ - INFO - Collections: video_transcript_segments, text_embeddings
+2026-04-21T14:10:55.009583843Z [err]  2026-04-21 14:10:54,741 - __main__ - INFO - Features: Fuzzy search, typo tolerance, query caching
+2026-04-21T14:10:55.009586423Z [err]  INFO:     Started server process [1]
+2026-04-21T14:10:55.009590143Z [err]  INFO:     Waiting for application startup.
+2026-04-21T14:10:55.009592442Z [err]  2026-04-21 14:10:54,753 - __main__ - INFO - Starting up Video Transcript Search API...
+2026-04-21T14:10:55.009595092Z [err]  2026-04-21 14:10:54,753 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-so...
+2026-04-21T14:10:55.009598722Z [err]  INFO:     Application startup complete.
+2026-04-21T14:10:55.228602406Z [err]  2026-04-21 14:10:54,009 - __main__ - INFO - Using OpenAI embeddings: text-embedding-3-large (dim=3072)
+2026-04-21T14:10:55.228608854Z [err]  2026-04-21 14:10:54,016 - __main__ - INFO - Connecting to Qdrant...
+2026-04-21T14:10:55.228612915Z [err]  2026-04-21 14:10:54,026 - __main__ - INFO - Connected to Qdrant successfully
+2026-04-21T14:10:55.228617116Z [err]  2026-04-21 14:10:54,658 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+2026-04-21T14:10:55.228621494Z [err]  2026-04-21 14:10:54,659 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:55.228624831Z [err]  2026-04-21 14:10:54,660 - __main__ - INFO - Collection 'video_transcript_segments' already exists
+2026-04-21T14:10:55.228634158Z [err]  2026-04-21 14:10:54,869 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:55.228639089Z [err]  2026-04-21 14:10:54,870 - __main__ - INFO - Skipping startup index creation (ENSURE_INDEXES_ON_STARTUP=false)
+2026-04-21T14:10:55.228643172Z [err]  2026-04-21 14:10:54,895 - __main__ - INFO - Starting FastAPI Video Elastic Search Service on port 8080...
+2026-04-21T14:10:55.228647742Z [err]  2026-04-21 14:10:54,895 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io
+2026-04-21T14:10:55.228655662Z [err]  2026-04-21 14:10:54,895 - __main__ - INFO - Collections: video_transcript_segments, text_embeddings
+2026-04-21T14:10:55.228659024Z [err]  2026-04-21 14:10:54,895 - __main__ - INFO - Features: Fuzzy search, typo tolerance, query caching
+2026-04-21T14:10:55.228662052Z [err]  INFO:     Started server process [1]
+2026-04-21T14:10:55.228665890Z [err]  INFO:     Waiting for application startup.
+2026-04-21T14:10:55.229259114Z [err]  2026-04-21 14:10:54,909 - __main__ - INFO - Starting up Video Transcript Search API...
+2026-04-21T14:10:55.229264742Z [err]  2026-04-21 14:10:54,909 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-so...
+2026-04-21T14:10:55.229270283Z [err]  INFO:     Application startup complete.
+2026-04-21T14:10:55.229274084Z [err]  INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+2026-04-21T14:10:56.198727287Z [err]  2026-04-21 14:10:55,658 - __main__ - INFO - Using OpenAI embeddings: text-embedding-3-large (dim=3072)
+2026-04-21T14:10:56.198734169Z [err]  2026-04-21 14:10:55,669 - __main__ - INFO - Connecting to Qdrant...
+2026-04-21T14:10:56.198739934Z [err]  2026-04-21 14:10:55,684 - __main__ - INFO - Connected to Qdrant successfully
+2026-04-21T14:10:56.313151064Z [err]  2026-04-21 14:10:56,309 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:56.313160919Z [err]  2026-04-21 14:10:56,310 - __main__ - INFO - Collection 'video_transcript_segments' already exists
+2026-04-21T14:10:56.319245327Z [err]  2026-04-21 14:10:56,314 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+2026-04-21T14:10:56.518398978Z [err]  2026-04-21 14:10:56,517 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:10:56.518409371Z [err]  2026-04-21 14:10:56,517 - __main__ - INFO - Skipping startup index creation (ENSURE_INDEXES_ON_STARTUP=false)
+2026-04-21T14:10:56.560501165Z [err]  2026-04-21 14:10:56,553 - __main__ - INFO - Starting FastAPI Video Elastic Search Service on port 8080...
+2026-04-21T14:10:56.560508681Z [err]  2026-04-21 14:10:56,553 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io
+2026-04-21T14:10:56.560514466Z [err]  2026-04-21 14:10:56,553 - __main__ - INFO - Collections: video_transcript_segments, text_embeddings
+2026-04-21T14:10:56.560519467Z [err]  2026-04-21 14:10:56,553 - __main__ - INFO - Features: Fuzzy search, typo tolerance, query caching
+2026-04-21T14:10:56.586014751Z [err]  INFO:     Started server process [1]
+2026-04-21T14:10:56.586024246Z [err]  INFO:     Waiting for application startup.
+2026-04-21T14:10:56.586030849Z [err]  2026-04-21 14:10:56,575 - __main__ - INFO - Starting up Video Transcript Search API...
+2026-04-21T14:10:56.586037923Z [err]  2026-04-21 14:10:56,575 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-so...
+2026-04-21T14:10:56.586044462Z [err]  INFO:     Application startup complete.
+2026-04-21T14:10:56.586077912Z [err]  INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+2026-04-21T14:10:56.766883695Z [inf]  Starting Container
+2026-04-21T14:11:00.278614704Z [err]  2026-04-21 14:10:59,419 - __main__ - INFO - Using OpenAI embeddings: text-embedding-3-large (dim=3072)
+2026-04-21T14:11:00.278620407Z [err]  2026-04-21 14:10:59,433 - __main__ - INFO - Connecting to Qdrant...
+2026-04-21T14:11:00.278626214Z [err]  2026-04-21 14:10:59,456 - __main__ - INFO - Connected to Qdrant successfully
+2026-04-21T14:11:00.278632087Z [err]  2026-04-21 14:11:00,082 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:11:00.278638109Z [err]  2026-04-21 14:11:00,085 - __main__ - INFO - Collection 'video_transcript_segments' already exists
+2026-04-21T14:11:00.278644749Z [err]  2026-04-21 14:11:00,087 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+2026-04-21T14:11:01.546492579Z [err]  2026-04-21 14:11:00,290 - httpx - INFO - HTTP Request: GET https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections "HTTP/1.1 200 OK"
+2026-04-21T14:11:01.546498517Z [err]  2026-04-21 14:11:00,291 - __main__ - INFO - Skipping startup index creation (ENSURE_INDEXES_ON_STARTUP=false)
+2026-04-21T14:11:01.546504829Z [err]  2026-04-21 14:11:00,353 - __main__ - INFO - Starting FastAPI Video Elastic Search Service on port 8080...
+2026-04-21T14:11:01.546511070Z [err]  2026-04-21 14:11:00,353 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io
+2026-04-21T14:11:01.546517309Z [err]  2026-04-21 14:11:00,353 - __main__ - INFO - Collections: video_transcript_segments, text_embeddings
+2026-04-21T14:11:01.546522933Z [err]  2026-04-21 14:11:00,353 - __main__ - INFO - Features: Fuzzy search, typo tolerance, query caching
+2026-04-21T14:11:01.546528629Z [err]  INFO:     Started server process [1]
+2026-04-21T14:11:01.546534989Z [err]  INFO:     Waiting for application startup.
+2026-04-21T14:11:01.546540733Z [err]  2026-04-21 14:11:00,382 - __main__ - INFO - Starting up Video Transcript Search API...
+2026-04-21T14:11:01.546546066Z [err]  2026-04-21 14:11:00,382 - __main__ - INFO - Qdrant URL: https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-so...
+2026-04-21T14:11:01.546551727Z [err]  INFO:     Application startup complete.
+2026-04-21T14:11:01.546557871Z [err]  INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+2026-04-21T14:11:45.157254648Z [err]  2026-04-21 14:11:40,383 - __main__ - INFO - [INCREMENTAL SEARCH] Executing new search for session c12b87da...
+2026-04-21T14:11:45.157257894Z [err]  2026-04-21 14:11:40,383 - __main__ - INFO - [INCREMENTAL SEARCH] First-page scan cap: requested=10000, effective=2500, words=1, alias=True, cursor_recovery=False
+2026-04-21T14:11:45.157261023Z [err]  2026-04-21 14:11:40,383 - __main__ - INFO - [SEARCH REQUEST] Created search request: query='hnr' words=['hnr'] word=None top_k=20 video_id=None speaker=None title=None language=None min_score=0.35 time_range=None max_scanned=2500 search_mode='semantic' filter_type=None filter_year=None filter_month=None filter_date=None
+2026-04-21T14:11:45.157264395Z [err]  2026-04-21 14:11:40,383 - __main__ - INFO - Alias detected in query 'hnr' → expanding to person 'Hafiz Naeem Ur Rehman'
+2026-04-21T14:11:45.157267440Z [err]  2026-04-21 14:11:40,383 - __main__ - INFO - [OPENAI-ONLY] Person alias detected ('hafiz_naeem'): enabling all scan strategies, max_scanned=2500
+2026-04-21T14:11:45.157270581Z [err]  2026-04-21 14:11:40,383 - __main__ - INFO - [OPENAI-ONLY] Single-word query detected: enabling lightweight keyword fallback
+2026-04-21T14:11:45.157273963Z [err]  2026-04-21 14:11:43,236 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-21T14:11:45.157276969Z [err]  2026-04-21 14:11:43,241 - __main__ - INFO - Query understood: lang=roman_urdu, speaker=Hafiz Naeem Ur Rehman, type=speaker_search
+2026-04-21T14:11:45.157279931Z [err]  2026-04-21 14:11:43,241 - __main__ - INFO - LLM intent: speaker_search, lang=roman_urdu, speaker=Hafiz Naeem Ur Rehman
+2026-04-21T14:11:45.157282986Z [err]  2026-04-21 14:11:43,241 - __main__ - INFO - Speaker search detected: 'Hafiz Naeem Ur Rehman' - will search BOTH transcript content AND speaker fields
+2026-04-21T14:11:45.157285981Z [err]  2026-04-21 14:11:43,242 - __main__ - INFO - Title search: skipping language filter to search ALL languages
+2026-04-21T14:11:45.158609926Z [err]  2026-04-21 14:11:43,242 - __main__ - INFO - Speaker field search for: 'Hafiz Naeem Ur Rehman'
+2026-04-21T14:11:45.158612881Z [err]  2026-04-21 14:11:43,840 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:45.158616010Z [err]  2026-04-21 14:11:43,841 - __main__ - INFO - Using MatchText filter for speaker search (text indexes available)
+2026-04-21T14:11:45.158619045Z [err]  2026-04-21 14:11:44,190 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:45.333974211Z [err]  2026-04-21 14:11:40,158 - __main__ - INFO - Title search: skipping language filter to search ALL languages
+2026-04-21T14:11:45.333981502Z [err]  2026-04-21 14:11:37,734 - __main__ - INFO - [INCREMENTAL SEARCH] Executing new search for session 49754dcc...
+2026-04-21T14:11:45.333994066Z [err]  2026-04-21 14:11:37,734 - __main__ - INFO - [INCREMENTAL SEARCH] First-page scan cap: requested=10000, effective=2500, words=1, alias=True, cursor_recovery=False
+2026-04-21T14:11:45.334001149Z [err]  2026-04-21 14:11:37,734 - __main__ - INFO - [SEARCH REQUEST] Created search request: query='hnr' words=['hnr'] word=None top_k=20 video_id=None speaker=None title=None language=None min_score=0.35 time_range=None max_scanned=2500 search_mode='semantic' filter_type=None filter_year=None filter_month=None filter_date=None
+2026-04-21T14:11:45.334008048Z [err]  2026-04-21 14:11:37,734 - __main__ - INFO - Alias detected in query 'hnr' → expanding to person 'Hafiz Naeem Ur Rehman'
+2026-04-21T14:11:45.334014882Z [err]  2026-04-21 14:11:37,734 - __main__ - INFO - [OPENAI-ONLY] Person alias detected ('hafiz_naeem'): enabling all scan strategies, max_scanned=2500
+2026-04-21T14:11:45.334021108Z [err]  2026-04-21 14:11:37,734 - __main__ - INFO - [OPENAI-ONLY] Single-word query detected: enabling lightweight keyword fallback
+2026-04-21T14:11:45.334026964Z [err]  2026-04-21 14:11:40,146 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-21T14:11:45.334034806Z [err]  2026-04-21 14:11:40,158 - __main__ - INFO - Query understood: lang=roman_urdu, speaker=Hafiz Naeem Ur Rehman, type=speaker_search
+2026-04-21T14:11:45.334044113Z [err]  2026-04-21 14:11:40,158 - __main__ - INFO - LLM intent: speaker_search, lang=roman_urdu, speaker=Hafiz Naeem Ur Rehman
+2026-04-21T14:11:45.334050384Z [err]  2026-04-21 14:11:40,158 - __main__ - INFO - Speaker search detected: 'Hafiz Naeem Ur Rehman' - will search BOTH transcript content AND speaker fields
+2026-04-21T14:11:45.334810542Z [err]  2026-04-21 14:11:40,158 - __main__ - INFO - Speaker field search for: 'Hafiz Naeem Ur Rehman'
+2026-04-21T14:11:45.334817013Z [err]  2026-04-21 14:11:40,786 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:45.334821618Z [err]  2026-04-21 14:11:40,787 - __main__ - INFO - Using MatchText filter for speaker search (text indexes available)
+2026-04-21T14:11:45.334825796Z [err]  2026-04-21 14:11:41,168 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:45.334830385Z [err]  2026-04-21 14:11:45,259 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:48.161522586Z [err]  2026-04-21 14:11:48,121 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:48.231762631Z [err]  2026-04-21 14:11:48,228 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:49.881624056Z [err]  2026-04-21 14:11:49,854 - __main__ - INFO - Speaker-only search found 0 results (scanned 2500)
+2026-04-21T14:11:49.881640104Z [err]  2026-04-21 14:11:49,854 - __main__ - INFO - Semantic search for: 'hnr Hafiz Naeem Ur Rehman'
+2026-04-21T14:11:49.881648344Z [err]  2026-04-21 14:11:49,854 - __main__ - INFO - Added expansion query: حافظ نعیم الرحمن speech تقریر
+2026-04-21T14:11:49.881653979Z [err]  2026-04-21 14:11:49,854 - __main__ - INFO - Total query variations (capped): 2
+2026-04-21T14:11:49.881661596Z [err]  2026-04-21 14:11:49,854 - __main__ - INFO - Using OpenAI embeddings for query
+2026-04-21T14:11:50.544020198Z [err]  2026-04-21 14:11:50,539 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+2026-04-21T14:11:51.292360043Z [err]  2026-04-21 14:11:51,198 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/query "HTTP/1.1 200 OK"
+2026-04-21T14:11:51.292373466Z [err]  2026-04-21 14:11:51,217 - __main__ - INFO - Using OpenAI embeddings for query
+2026-04-21T14:11:51.419362757Z [err]  2026-04-21 14:11:51,418 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:51.836496891Z [err]  2026-04-21 14:11:51,818 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+2026-04-21T14:11:52.344763138Z [err]  2026-04-21 14:11:52,271 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/query "HTTP/1.1 200 OK"
+2026-04-21T14:11:52.344766944Z [err]  2026-04-21 14:11:52,275 - __main__ - INFO - Found 50 unique semantic results from 2 query variations
+2026-04-21T14:11:52.344771550Z [err]  2026-04-21 14:11:52,275 - __main__ - INFO - Keywords after stop word filtering: 3 words
+2026-04-21T14:11:52.344775456Z [err]  2026-04-21 14:11:52,275 - __main__ - INFO - Elastic keyword search for: ['hafiz naeem', 'hafiz naeem ur rehman', 'hnr'] (max_scanned=2500)
+2026-04-21T14:11:52.536536576Z [err]  2026-04-21 14:11:52,533 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:53.227415689Z [err]  2026-04-21 14:11:52,990 - __main__ - INFO - Speaker-only search found 0 results (scanned 2500)
+2026-04-21T14:11:53.227418824Z [err]  2026-04-21 14:11:52,990 - __main__ - INFO - Semantic search for: 'hnr Hafiz Naeem Ur Rehman'
+2026-04-21T14:11:53.227421662Z [err]  2026-04-21 14:11:52,990 - __main__ - INFO - Added expansion query: حافظ نعیم الرحمن speech تقریر
+2026-04-21T14:11:53.227424590Z [err]  2026-04-21 14:11:52,990 - __main__ - INFO - Total query variations (capped): 2
+2026-04-21T14:11:53.227427161Z [err]  2026-04-21 14:11:52,990 - __main__ - INFO - Using OpenAI embeddings for query
+2026-04-21T14:11:53.650020815Z [err]  2026-04-21 14:11:53,649 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+2026-04-21T14:11:54.283341471Z [err]  2026-04-21 14:11:54,282 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/query "HTTP/1.1 200 OK"
+2026-04-21T14:11:54.309635190Z [err]  2026-04-21 14:11:54,299 - __main__ - INFO - Using OpenAI embeddings for query
+2026-04-21T14:11:54.725136151Z [err]  2026-04-21 14:11:54,724 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+2026-04-21T14:11:55.244956878Z [err]  2026-04-21 14:11:55,157 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/query "HTTP/1.1 200 OK"
+2026-04-21T14:11:55.244960439Z [err]  2026-04-21 14:11:55,161 - __main__ - INFO - Found 50 unique semantic results from 2 query variations
+2026-04-21T14:11:55.244963797Z [err]  2026-04-21 14:11:55,161 - __main__ - INFO - Keywords after stop word filtering: 3 words
+2026-04-21T14:11:55.244969750Z [err]  2026-04-21 14:11:55,161 - __main__ - INFO - Elastic keyword search for: ['hafiz naeem', 'hafiz naeem ur rehman', 'hnr'] (max_scanned=2500)
+2026-04-21T14:11:55.466661607Z [err]  2026-04-21 14:11:55,413 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:55.510390706Z [err]  2026-04-21 14:11:55,506 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:58.315702133Z [err]  2026-04-21 14:11:58,310 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:11:58.456113290Z [err]  2026-04-21 14:11:58,222 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:12:00.727408789Z [err]  2026-04-21 14:12:00,720 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:12:00.883412282Z [err]  2026-04-21 14:12:00,881 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:12:03.347311009Z [err]  2026-04-21 14:12:03,146 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:12:03.561255245Z [err]  2026-04-21 14:12:03,384 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:12:05.498214410Z [err]  2026-04-21 14:12:05,483 - httpx - INFO - HTTP Request: POST https://f98698ca-0490-4f21-ae3d-ffa9fbfcd544.ap-southeast-2-0.aws.cloud.qdrant.io:6333/collections/video_transcript_segments/points/scroll "HTTP/1.1 200 OK"
+2026-04-21T14:12:05.648185893Z [err]  2026-04-21 14:12:05,568 - __main__ - INFO - [TITLE SEARCH] explicit=False, title_filter='None', will_run=False
+2026-04-21T14:12:05.648190370Z [err]  2026-04-21 14:12:05,580 - __main__ - INFO - [ALIAS PRECISION] strict alias filter applied for 'hafiz_naeem': kept=45, removed=5
+2026-04-21T14:12:05.648195391Z [err]  2026-04-21 14:12:05,580 - __main__ - INFO - Skipping LLM reranking (results=45, high_confidence=False) for speed
+2026-04-21T14:12:06.913348074Z [err]  2026-04-21 14:12:06,905 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-21T14:12:06.913353197Z [err]  2026-04-21 14:12:06,906 - __main__ - INFO - Query relevance validation: is_relevant=True, max_score=1.00, relevant_count=5/5
+2026-04-21T14:12:06.913357986Z [err]  2026-04-21 14:12:06,906 - __main__ - INFO - Query relevance validation passed: 5/5 results are relevant (max score: 1.00)
+2026-04-21T14:12:06.913362145Z [err]  2026-04-21 14:12:06,906 - __main__ - INFO - Search completed: 0 speaker + 50 semantic + 0 keyword + 0 title = 15 merged results from 2 videos (consolidated from 45 raw matches)
+2026-04-21T14:12:06.913366585Z [err]  2026-04-21 14:12:06,907 - __main__ - INFO - [FIRST SEARCH] Extracted 15 results
+2026-04-21T14:12:06.913370617Z [err]  2026-04-21 14:12:06,908 - __main__ - INFO - Cached 15 results (top_k=20) for session 49754dcc...
+2026-04-21T14:12:06.913374162Z [err]  2026-04-21 14:12:06,908 - __main__ - INFO - [BATCH EXTRACTION] start=0, end=14, total_results=15, segments_extracted=15, unique_videos=2, requested_batch_size=10, has_more=False
+2026-04-21T14:12:06.913377872Z [err]  2026-04-21 14:12:06,908 - __main__ - INFO - [FIRST SEARCH] Extracted batch: 15 segments, 2 videos, has_more=False
+2026-04-21T14:12:06.913382202Z [err]  2026-04-21 14:12:06,908 - __main__ - INFO - [EXPANDABILITY] Small query check: results=15, top_k=20, threshold=6, expandable=True
+2026-04-21T14:12:06.913386134Z [err]  2026-04-21 14:12:06,908 - __main__ - INFO - [EXPANDABLE BOUNDARY] Creating expansion cursor at index=14; exposing has_more=True to allow next request to expand (top_k=20 → 50, results=15).
+2026-04-21T14:12:06.913391193Z [err]  2026-04-21 14:12:06,908 - __main__ - INFO - [FIRST SEARCH] After expandability check: has_more=True, expansion_pending=True, cursor=present
+2026-04-21T14:12:06.913394599Z [inf]  INFO:     100.64.0.2:16708 - "POST /search/incremental HTTP/1.1" 200 OK
+2026-04-21T14:12:07.506215048Z [err]  2026-04-21 14:12:07,494 - __main__ - INFO - [TITLE SEARCH] explicit=False, title_filter='None', will_run=False
+2026-04-21T14:12:07.508251938Z [err]  2026-04-21 14:12:07,506 - __main__ - INFO - [ALIAS PRECISION] strict alias filter applied for 'hafiz_naeem': kept=45, removed=5
+2026-04-21T14:12:07.508254873Z [err]  2026-04-21 14:12:07,506 - __main__ - INFO - Skipping LLM reranking (results=45, high_confidence=False) for speed
+2026-04-21T14:12:09.970072920Z [err]  2026-04-21 14:12:09,964 - __main__ - INFO - Search completed: 0 speaker + 50 semantic + 0 keyword + 0 title = 15 merged results from 2 videos (consolidated from 45 raw matches)
+2026-04-21T14:12:09.970087432Z [err]  2026-04-21 14:12:09,962 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-21T14:12:09.970090738Z [err]  2026-04-21 14:12:09,963 - __main__ - INFO - Query relevance validation: is_relevant=True, max_score=1.00, relevant_count=5/5
+2026-04-21T14:12:09.970100158Z [err]  2026-04-21 14:12:09,963 - __main__ - INFO - Query relevance validation passed: 5/5 results are relevant (max score: 1.00)
+2026-04-21T14:12:09.970151514Z [err]  2026-04-21 14:12:09,965 - __main__ - INFO - [FIRST SEARCH] Extracted 15 results
+2026-04-21T14:12:09.970156190Z [err]  2026-04-21 14:12:09,965 - __main__ - INFO - Cached 15 results (top_k=20) for session c12b87da...
+2026-04-21T14:12:09.970160180Z [err]  2026-04-21 14:12:09,965 - __main__ - INFO - [BATCH EXTRACTION] start=0, end=14, total_results=15, segments_extracted=15, unique_videos=2, requested_batch_size=10, has_more=False
+2026-04-21T14:12:09.970164404Z [err]  2026-04-21 14:12:09,965 - __main__ - INFO - [FIRST SEARCH] Extracted batch: 15 segments, 2 videos, has_more=False
+2026-04-21T14:12:09.970167731Z [err]  2026-04-21 14:12:09,965 - __main__ - INFO - [EXPANDABILITY] Small query check: results=15, top_k=20, threshold=6, expandable=True
+2026-04-21T14:12:09.970170939Z [err]  2026-04-21 14:12:09,965 - __main__ - INFO - [EXPANDABLE BOUNDARY] Creating expansion cursor at index=14; exposing has_more=True to allow next request to expand (top_k=20 → 50, results=15).
+2026-04-21T14:12:09.970174326Z [err]  2026-04-21 14:12:09,965 - __main__ - INFO - [FIRST SEARCH] After expandability check: has_more=True, expansion_pending=True, cursor=present
+2026-04-21T14:12:09.970177912Z [inf]  INFO:     100.64.0.2:45736 - "POST /search/incremental HTTP/1.1" 200 OK

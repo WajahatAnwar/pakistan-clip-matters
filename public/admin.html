@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clip Matters - Admin Guide</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+            line-height: 1.7;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        /* Header */
+        .header {
+            margin-bottom: 30px;
+        }
+        
+        .banner {
+            max-width: 100%;
+            width: 100%;
+            height: auto;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            display: block;
+        }
+        
+        .header h1 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 2.8em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+            font-size: 1.3em;
+            color: #666;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+        
+        /* Cards */
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h2 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 1.6em;
+            color: #764ba2;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .card h2 .icon {
+            font-size: 1.4em;
+        }
+        
+        .card p {
+            color: #555;
+            margin-bottom: 15px;
+            font-size: 1.05em;
+        }
+        
+        /* Feature List */
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .feature-list li {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .feature-list .check {
+            color: #28a745;
+            font-size: 1.3em;
+            flex-shrink: 0;
+        }
+        
+        /* Comparison Section */
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 25px 0;
+        }
+        
+        .comparison-box {
+            padding: 25px;
+            border-radius: 15px;
+        }
+        
+        .old-way {
+            background: linear-gradient(135deg, #ff6b6b20 0%, #ee5a5a20 100%);
+            border: 2px solid #ff6b6b;
+        }
+        
+        .new-way {
+            background: linear-gradient(135deg, #28a74520 0%, #20c99720 100%);
+            border: 2px solid #28a745;
+        }
+        
+        .comparison-box h3 {
+            font-size: 1.1em;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .comparison-box ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .comparison-box li {
+            padding: 8px 0;
+            font-size: 0.95em;
+        }
+        
+        /* Step Cards */
+        .step-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .step-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4em;
+            font-weight: 700;
+            margin: 0 auto 15px;
+        }
+        
+        .step-card h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .step-card p {
+            color: #666;
+            font-size: 0.95em;
+            margin: 0;
+        }
+        
+        /* Highlight Box */
+        .highlight-box {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border-left: 4px solid #764ba2;
+            padding: 20px 25px;
+            border-radius: 0 15px 15px 0;
+            margin: 20px 0;
+        }
+        
+        .highlight-box h4 {
+            color: #764ba2;
+            margin-bottom: 10px;
+        }
+        
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 25px 0;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 15px;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: 700;
+            color: #764ba2;
+        }
+        
+        .stat-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        /* Footer */
+        .footer {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-top: 30px;
+        }
+        
+        .footer img {
+            max-width: 120px;
+            margin-bottom: 15px;
+        }
+        
+        .footer p {
+            color: #666;
+            margin: 5px 0;
+        }
+        
+        .footer .contact {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+        
+        @media print {
+            body {
+                background: white;
+            }
+            
+            .card, .header, .footer {
+                box-shadow: none;
+                border: 1px solid #ddd;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="Pakistan Matters Banner 02.png" alt="Pakistan Matters Banner" class="banner">
+        </div>
+        
+        <!-- Admin Tutorial Video -->
+        <div class="card">
+            <h2><span class="icon">🎬</span> Admin Tutorial Video</h2>
+            <p>Watch this comprehensive tutorial to learn how to use the admin panel effectively:</p>
+            <div style="text-align: center; margin: 20px 0;">
+                <video controls style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+                    <source src="Admin video.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            <div class="highlight-box">
+                <h4>📋 What You'll Learn</h4>
+                <p>• Setting up your account and connecting services<br>• Uploading and processing videos<br>• Managing users and permissions<br>• Monitoring system performance</p>
+            </div>
+        </div>
+        
+        <!-- Project Summary -->
+        <div class="card">
+            <h2><span class="icon">📋</span> What is Clip Matters?</h2>
+            <p><strong>Clip Matters</strong> is an intelligent content management system. It transforms how organizations handle digital content from storage and organization to search and sharing.</p>
+            
+            <div class="highlight-box">
+                <h4>💡 In Simple Terms</h4>
+                <p>Think of it as a "Google for your videos" - but smarter! You can search inside videos to find exactly who said what, when they said it, and create clips instantly. No more watching hours of footage to find one quote!</p>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number">50</div>
+                    <div class="stat-label">Videos Processed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">AI</div>
+                    <div class="stat-label">Powered Search</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">24/7</div>
+                    <div class="stat-label">Availability</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- The Problem We Solve -->
+        <div class="card">
+            <h2><span class="icon">🎯</span> The Problem We Solve</h2>
+            
+            <div class="comparison">
+                <div class="comparison-box old-way">
+                    <h3>❌ Traditional Way</h3>
+                    <ul>
+                        <li>• Watch entire videos to find specific content</li>
+                        <li>• Manually note timestamps and speakers</li>
+                        <li>• Hours spent creating transcripts</li>
+                        <li>• Difficult to search old footage</li>
+                        <li>• No way to find who said what</li>
+                        <li>• Team waits for clips manually</li>
+                        <li>• High manpower requirement</li>
+                    </ul>
+                </div>
+                <div class="comparison-box new-way">
+                    <h3>✅ With Clip Matters</h3>
+                    <ul>
+                        <li>• Search by words or meaning instantly</li>
+                        <li>• AI identifies speakers automatically</li>
+                        <li>• Automatic transcription in minutes</li>
+                        <li>• Find anything in seconds</li>
+                        <li>• Search by specific person's name</li>
+                        <li>• Share clips with one click</li>
+                        <li>• Reduce team workload by 90%</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2><span class="icon">🚀</span> Getting Started (Admin)</h2>
+            
+            <div class="step-grid">
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <h4>Login to Admin Panel</h4>
+                    <p>Access /admin/dashboard with your admin credentials</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <h4>Connect Dropbox</h4>
+                    <p>Link your organization's Dropbox for video access</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <h4>Upload Voice Samples</h4>
+                    <p>Train the system to recognize key speakers</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">4</div>
+                    <h4>Process Videos</h4>
+                    <p>Select and process your video library</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Admin Capabilities -->
+        <div class="card">
+            <h2><span class="icon">⚡</span> What You Can Do as Admin</h2>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Upload & Process Videos</strong><br>
+                        <span style="color:#666">Connect to Dropbox, select videos, and let AI process them automatically. Videos are uploaded to YouTube (unlisted) for easy playback.</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Train Speaker Recognition</strong><br>
+                        <span style="color:#666">Upload voice samples of key people (leaders, speakers, hosts). The system will automatically identify them in all videos!</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>View Dashboard Analytics</strong><br>
+                        <span style="color:#666">See processing stats, most searched terms, user activity, and system health at a glance.</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Manage Users</strong><br>
+                        <span style="color:#666">Create accounts for your team, set permissions, and control who can access the platform.</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Bulk Video Processing</strong><br>
+                        <span style="color:#666">Process multiple videos at once - perfect for handling large video archives.</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Monitor Processing Status</strong><br>
+                        <span style="color:#666">Track which videos are pending, processing, or completed with detailed progress indicators.</span>
+                    </div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- How It Works -->
+        <div class="card">
+            <h2><span class="icon">🔄</span> How Video Processing Works</h2>
+            <p>Here's what happens when you add a new video:</p>
+            
+            <div class="step-grid">
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <h4>Select from Dropbox</h4>
+                    <p>Choose video files from your connected Dropbox account</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <h4>AI Transcription</h4>
+                    <p>AssemblyAI converts speech to text with high accuracy</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <h4>Speaker Detection</h4>
+                    <p>Pyannote AI identifies who is speaking and when</p>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">4</div>
+                    <h4>Ready to Search</h4>
+                    <p>Video is indexed and available for instant searching</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- AI Tools We Use -->
+        <!-- <div class="card">
+            <h2><span class="icon">🤖</span> AI Technology Powering Clip Matters</h2>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">🎙️</span>
+                    <div>
+                        <strong>AssemblyAI</strong> - Industry-leading speech recognition that converts audio to text with exceptional accuracy, even with accents and background noise.
+                    </div>
+                </li>
+                <li>
+                    <span class="check">👤</span>
+                    <div>
+                        <strong>Pyannote AI</strong> - Advanced speaker identification that learns voices and automatically tags who is speaking throughout the video.
+                    </div>
+                </li>
+                <li>
+                    <span class="check">🔍</span>
+                    <div>
+                        <strong>Qdrant Vector Database</strong> - Enables semantic search so you can search by meaning, not just exact words.
+                    </div>
+                </li>
+                <li>
+                    <span class="check">⚡</span>
+                    <div>
+                        <strong>Elastic Search</strong> - Lightning-fast keyword search with typo tolerance and fuzzy matching.
+                    </div>
+                </li>
+            </ul>
+            
+            <div class="highlight-box">
+                <h4>🎯 What This Means For You</h4>
+                <p>Search for "economy discussion" and find all segments where anyone talks about economic topics - even if they used words like "financial situation" or "monetary policy"!</p>
+            </div>
+        </div> -->
+        
+        <!-- Sharing with Teams -->
+        <div class="card">
+            <h2><span class="icon">📤</span> Sharing with Media & Social Teams</h2>
+            
+            <p>Getting content to your media team is now effortless:</p>
+            
+            <ul class="feature-list">
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Instant Clip Generation</strong><br>
+                        <span style="color:#666">Select start and end times, generate downloadable clips for social media posts.</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Transcription Export</strong><br>
+                        <span style="color:#666">Share full transcripts with your content team for blog posts, articles, or subtitles.</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Speaker-Based Search</strong><br>
+                        <span style="color:#666">Need all clips of a specific leader? Search by their name and get every segment instantly.</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="check">✓</span>
+                    <div>
+                        <strong>Direct Links</strong><br>
+                        <span style="color:#666">Share video links that jump directly to the relevant timestamp.</span>
+                    </div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Admin Quick Start -->
+        
+
+        <!-- Support -->
+        <div class="card">
+            <h2><span class="icon">🆘</span> Need Help?</h2>
+            <p>For technical support or questions about the admin portal:</p>
+            <ul class="feature-list">
+                <li>
+                    <span class="check">📧</span>
+                    <div>Contact the Swishtag development team for technical issues</div>
+                </li>
+                <li>
+                    <span class="check">📖</span>
+                    <div>Refer to the Technical Documentation for detailed API information</div>
+                </li>
+                <li>
+                    <span class="check">🎬</span>
+                    <div>Watch the video tutorial for step-by-step guidance</div>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <img src="Swishtag logo1.png" alt="Swishtag Logo">
+            <p><strong>Clip Matters</strong> - Intelligent Video Management</p>
+            <p style="font-size: 0.9em;">Developed by Swishtag</p>
+            <div class="contact">
+                <p style="font-size: 0.85em; color: #888;">© 2026 Swishtag. All rights reserved.</p>
+                <p style="font-size: 0.85em; color: #888;">Document Version: 1.0 | Admin Guide</p>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>

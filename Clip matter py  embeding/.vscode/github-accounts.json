@@ -1,0 +1,32 @@
+[
+  {
+    "label": "clipmatter-stage",
+    "name": "Clip Matter",
+    "email": "clipmatter@gmail.com",
+    "sessionId": "fd845e3b12a1efa5",
+    "accountId": "249932251",
+    "username": "clipmatter-stage",
+    "avatarUrl": "https://avatars.githubusercontent.com/u/249932251?v=4",
+    "authenticated": true
+  },
+  {
+    "label": "Backenddev02",
+    "name": "Backenddev02",
+    "email": "backenddev02@swishtag.info",
+    "sessionId": "",
+    "accountId": "",
+    "username": "Backenddev02",
+    "avatarUrl": "https://avatars.githubusercontent.com/u/246502611?v=4",
+    "authenticated": false
+  },
+  {
+    "label": "AbdulrahmanChohan",
+    "name": "Abdulrahman Chohan",
+    "email": "abdulrahmanchohan4181@gmail.com",
+    "sessionId": "59fd217a1b7250f2",
+    "accountId": "211319334",
+    "username": "AbdulrahmanChohan",
+    "avatarUrl": "https://avatars.githubusercontent.com/u/211319334?v=4",
+    "authenticated": true
+  }
+]
