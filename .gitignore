@@ -15,6 +15,9 @@
 Homestead.json
 Homestead.yaml
 auth.json
+clip-matters-*.json
+*service-account*.json
+*google-credentials*.json
 npm-debug.log
 yarn-error.log
 /.fleet
