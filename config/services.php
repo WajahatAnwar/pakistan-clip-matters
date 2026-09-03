@@ -39,6 +39,11 @@ return [
         'client_id' => env('DROPBOX_APP_KEY'),
         'client_secret' => env('DROPBOX_APP_SECRET'),
         'redirect' => env('DROPBOX_REDIRECT_URI'),
+        // Keep this below ProcessVideoJob::$timeout (3600 seconds).
+        'download_timeout' => (int) env('DROPBOX_DOWNLOAD_TIMEOUT', 3300),
+        'large_download_timeout' => (int) env('DROPBOX_LARGE_DOWNLOAD_TIMEOUT', 10800),
+        'temp_disk_reserve_mb' => (int) env('DROPBOX_TEMP_DISK_RESERVE_MB', 5120),
+        'temp_disk_overhead_percent' => (int) env('DROPBOX_TEMP_DISK_OVERHEAD_PERCENT', 10),
     ],
 
     'google_cloud_speech' => [

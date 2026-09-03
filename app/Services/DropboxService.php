@@ -610,9 +610,10 @@ class DropboxService
      * 
      * @param string $dropboxPath Path to file in Dropbox
      * @param string $localPath Local path to save the file
+     * @param int|null $expectedFileSize Known remote size, to avoid a duplicate metadata request
      * @return bool True if download succeeded
      */
-    public function downloadToFile(string $dropboxPath, string $localPath): bool
+    public function downloadToFile(string $dropboxPath, string $localPath, ?int $expectedFileSize = null): bool
     {
         Log::info("Starting streamed download", ['dropbox_path' => $dropboxPath, 'local_path' => $localPath]);
         
@@ -624,6 +625,31 @@ class DropboxService
         
         // Detect team account status
         $this->detectTeamAccount();
+
+        // Refuse downloads that cannot fit before writing a large partial file.
+        // Keep additional room for extracted audio and normal application use.
+        $reserveBytes = max(0, (int) config('services.dropbox.temp_disk_reserve_mb', 5120)) * 1024 * 1024;
+        $remoteFileSize = $expectedFileSize ?? $this->getFileSize($dropboxPath);
+        if ($remoteFileSize !== null) {
+            $freeBytes = disk_free_space($dir);
+            $overheadPercent = max(0, (int) config('services.dropbox.temp_disk_overhead_percent', 10));
+            $requiredBytes = (int) ceil($remoteFileSize * (1 + ($overheadPercent / 100))) + $reserveBytes;
+
+            if ($freeBytes === false || $freeBytes < $requiredBytes) {
+                Log::warning('Dropbox download skipped: insufficient temporary disk space', [
+                    'path' => $dropboxPath,
+                    'file_size_bytes' => $remoteFileSize,
+                    'free_bytes' => $freeBytes,
+                    'required_bytes' => $requiredBytes,
+                ]);
+
+                throw new \RuntimeException(sprintf(
+                    'Insufficient temporary disk space: %.2f GB free, %.2f GB required',
+                    ($freeBytes === false ? 0 : $freeBytes) / 1024 / 1024 / 1024,
+                    $requiredBytes / 1024 / 1024 / 1024
+                ));
+            }
+        }
         
         // For team accounts, we MUST use direct download API (temporary links don't work)
         // For personal accounts, we can also use direct download (it's more reliable)
@@ -658,15 +684,21 @@ class DropboxService
             ]);
         }
         
-        // Create temporary file to capture error response
+        // Create a small temporary file for cURL diagnostics. Never use the
+        // downloaded media file itself as an error buffer.
         $errorFile = tempnam(sys_get_temp_dir(), 'dropbox_error_');
         
         // Use cURL to stream directly to file (memory efficient)
-        $fp = fopen($localPath, 'w');
+        $fp = fopen($localPath, 'wb');
         if (!$fp) {
             Log::error("Could not open local file for writing", ['path' => $localPath]);
+            if ($errorFile !== false) {
+                @unlink($errorFile);
+            }
             return false;
         }
+
+        $errorHandle = $errorFile !== false ? fopen($errorFile, 'wb') : false;
         
         $ch = curl_init('https://content.dropboxapi.com/2/files/download');
         
@@ -674,15 +706,39 @@ class DropboxService
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, null); // No body for download
         curl_setopt($ch, CURLOPT_FILE, $fp);
-        curl_setopt($ch, CURLOPT_STDERR, fopen($errorFile, 'w'));
-        curl_setopt($ch, CURLOPT_VERBOSE, true); // Enable verbose for debugging
+        if ($errorHandle !== false) {
+            curl_setopt($ch, CURLOPT_STDERR, $errorHandle);
+            curl_setopt($ch, CURLOPT_VERBOSE, true);
+        }
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 3600); // 1 hour timeout for large files
+        $largeFileThresholdBytes = max(1, (int) config('video-processing.large_file_threshold_mb', 10240)) * 1024 * 1024;
+        $downloadTimeout = $remoteFileSize !== null && $remoteFileSize >= $largeFileThresholdBytes
+            ? (int) config('services.dropbox.large_download_timeout', 10800)
+            : (int) config('services.dropbox.download_timeout', 3300);
+
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_TIMEOUT, max(60, $downloadTimeout));
         curl_setopt($ch, CURLOPT_NOPROGRESS, false);
-        curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function($resource, $downloadSize, $downloaded, $uploadSize, $uploaded) {
+        $diskSpaceAbort = false;
+        curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function($resource, $downloadSize, $downloaded, $uploadSize, $uploaded) use ($dir, $reserveBytes, &$diskSpaceAbort) {
             static $lastLog = 0;
+            static $lastDiskCheck = 0;
             $now = time();
+
+            // Protect the application even if Dropbox metadata preflight was
+            // unavailable or other processes consume disk during the download.
+            if (($now - $lastDiskCheck) >= 5) {
+                clearstatcache(true, $dir);
+                $freeBytes = disk_free_space($dir);
+                $lastDiskCheck = $now;
+
+                if ($freeBytes === false || $freeBytes <= $reserveBytes) {
+                    $diskSpaceAbort = true;
+                    return 1; // Abort cURL; the partial file is removed below.
+                }
+            }
+
             // Log progress every 30 seconds
             if ($downloadSize > 0 && ($now - $lastLog) >= 30) {
                 $percent = round(($downloaded / $downloadSize) * 100, 1);
@@ -700,28 +756,31 @@ class DropboxService
         $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
         curl_close($ch);
         fclose($fp);
+        if ($errorHandle !== false) {
+            fclose($errorHandle);
+        }
         
         // Read verbose output if there was an error
         $verboseOutput = '';
-        if (file_exists($errorFile)) {
-            $verboseOutput = file_get_contents($errorFile);
+        if ($errorFile !== false && file_exists($errorFile)) {
+            // cURL diagnostics are small, but cap the read defensively.
+            $verboseHandle = fopen($errorFile, 'rb');
+            if ($verboseHandle !== false) {
+                $verboseOutput = fread($verboseHandle, 8192) ?: '';
+                fclose($verboseHandle);
+            }
             @unlink($errorFile);
         }
         
         if (!$success || $httpCode !== 200) {
-            // Read error response from downloaded file (might contain JSON error)
-            $errorResponse = '';
-            if (file_exists($localPath)) {
-                $errorResponse = file_get_contents($localPath);
-            }
-            
             Log::error("Dropbox download failed", [
                 'http_code' => $httpCode,
                 'curl_error' => $error,
                 'content_type' => $contentType,
                 'path' => $dropboxPath,
-                'error_response' => substr($errorResponse, 0, 500),
-                'verbose_output' => substr($verboseOutput, -500) // Last 500 chars
+                'partial_file_size_bytes' => file_exists($localPath) ? filesize($localPath) : 0,
+                'aborted_for_disk_space' => $diskSpaceAbort,
+                'verbose_output' => substr($verboseOutput, -500),
             ]);
             
             @unlink($localPath); // Clean up failed download
@@ -743,6 +802,43 @@ class DropboxService
         ]);
         
         return true;
+    }
+
+    /**
+     * Return a Dropbox file's size without downloading its content.
+     */
+    public function getFileSize(string $filePath): ?int
+    {
+        try {
+            $this->detectTeamAccount();
+
+            $response = Http::withToken($this->getAccessToken())
+                ->withOptions(['verify' => false, 'timeout' => 30])
+                ->withHeaders($this->getApiHeaders())
+                ->post('https://api.dropboxapi.com/2/files/get_metadata', [
+                    'path' => $filePath,
+                    'include_media_info' => false,
+                    'include_deleted' => false,
+                ]);
+
+            if (!$response->successful()) {
+                Log::warning('Could not determine Dropbox file size before download', [
+                    'path' => $filePath,
+                    'status' => $response->status(),
+                ]);
+                return null;
+            }
+
+            $size = $response->json('size');
+
+            return is_numeric($size) ? (int) $size : null;
+        } catch (\Throwable $e) {
+            Log::warning('Dropbox file size preflight failed', [
+                'path' => $filePath,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 
     /**

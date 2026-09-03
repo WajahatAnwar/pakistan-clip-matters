@@ -42,6 +42,8 @@ class ProcessVideoJob implements ShouldQueue
         $this->userId = $userId;
         $this->videoId = $videoId;
         $this->dropboxVideoPath = $dropboxVideoPath;
+        $this->timeout = (int) config('video-processing.timeout', 21600);
+        $this->onQueue(config('video-processing.queue', 'default'));
         
         // Clean and set video title - YouTube has max 100 chars and doesn't allow < > characters
         $cleanTitle = $videoTitle;
@@ -87,40 +89,60 @@ class ProcessVideoJob implements ShouldQueue
                 throw new \Exception('Video record not found');
             }
 
-            // Mark video as processing
+            $dropboxService = new DropboxService($user);
+
+            // Dropbox size is not guaranteed to be stored before processing.
+            $remoteFileSize = $dropboxService->getFileSize($this->dropboxVideoPath);
+            if ($remoteFileSize !== null) {
+                $video->update(['size_mb' => round($remoteFileSize / 1024 / 1024, 2)]);
+            }
+
+            // Mark the video as processing after the metadata preflight.
             $video->markAsProcessing();
 
             // ============================================
-            // STEP 1: DOWNLOAD FROM DROPBOX
+            // STEP 1: OPEN DROPBOX SOURCE
             // ============================================
-            Log::info('Step 1: Downloading from Dropbox');
-            $results['steps'][] = ['step' => 1, 'action' => 'Downloading from Dropbox', 'status' => 'started'];
+            Log::info('Step 1: Opening Dropbox video source');
+            $results['steps'][] = ['step' => 1, 'action' => 'Opening Dropbox video source', 'status' => 'started'];
 
-            $dropboxService = new DropboxService($user);
-            $localVideoPath = storage_path('app/temp/video_' . time() . '_' . uniqid() . '.' . pathinfo($this->dropboxVideoPath, PATHINFO_EXTENSION));
-            
-            // Ensure temp directory exists
-            if (!file_exists(dirname($localVideoPath))) {
-                mkdir(dirname($localVideoPath), 0755, true);
-            }
+            $localVideoPath = null;
+            $streamFromDropbox = (bool) config('video-processing.stream_from_dropbox', true);
 
-            // Use streaming download to avoid loading entire file into memory
-            // This is critical for large video files (500MB+)
-            $downloadSuccess = $dropboxService->downloadToFile($this->dropboxVideoPath, $localVideoPath);
-            
-            if (!$downloadSuccess || !file_exists($localVideoPath)) {
-                throw new \Exception('Failed to download file from Dropbox');
+            if ($streamFromDropbox) {
+                $videoInput = $dropboxService->getTemporaryLink($this->dropboxVideoPath);
+                if (!$videoInput) {
+                    throw new \Exception('Failed to get Dropbox streaming link');
+                }
+
+                $results['video_size_mb'] = $remoteFileSize !== null
+                    ? round($remoteFileSize / 1024 / 1024, 2)
+                    : null;
+                $results['steps'][] = ['step' => 1, 'action' => 'Dropbox stream opened', 'status' => 'completed', 'size_mb' => $results['video_size_mb']];
+                Log::info('Video will be processed directly from Dropbox', [
+                    'video_id' => $this->videoId,
+                    'size_mb' => $results['video_size_mb'],
+                ]);
+            } else {
+                $localVideoPath = storage_path('app/temp/video_' . time() . '_' . uniqid() . '.' . pathinfo($this->dropboxVideoPath, PATHINFO_EXTENSION));
+
+                if (!file_exists(dirname($localVideoPath))) {
+                    mkdir(dirname($localVideoPath), 0755, true);
+                }
+
+                $downloadSuccess = $dropboxService->downloadToFile($this->dropboxVideoPath, $localVideoPath, $remoteFileSize);
+                if (!$downloadSuccess || !file_exists($localVideoPath)) {
+                    throw new \Exception('Failed to download file from Dropbox');
+                }
+
+                $videoInput = $localVideoPath;
+                $videoSize = filesize($localVideoPath);
+                $results['local_video_path'] = $localVideoPath;
+                $results['video_size_mb'] = round($videoSize / 1024 / 1024, 2);
+                $results['steps'][] = ['step' => 1, 'action' => 'Downloaded from Dropbox', 'status' => 'completed', 'size_mb' => $results['video_size_mb']];
+                $video->update(['size_mb' => $results['video_size_mb']]);
+                Log::info('Video downloaded', ['size_mb' => $results['video_size_mb']]);
             }
-            
-            $videoSize = filesize($localVideoPath);
-            $results['local_video_path'] = $localVideoPath;
-            $results['video_size_mb'] = round($videoSize / 1024 / 1024, 2);
-            $results['steps'][] = ['step' => 1, 'action' => 'Downloaded from Dropbox', 'status' => 'completed', 'size_mb' => $results['video_size_mb']];
-            
-            // Update video record with size
-            $video->update(['size_mb' => $results['video_size_mb']]);
-            
-            Log::info('Video downloaded', ['size_mb' => $results['video_size_mb']]);
 
             // =================================================
             // STEP 1.5: EXTRACT VIDEO CREATION DATE VIA FFPROBE
@@ -132,7 +154,7 @@ class ProcessVideoJob implements ShouldQueue
                 $ffprobeOutput = [];
                 $ffprobeReturnCode = null;
                 exec(
-                    'ffprobe -v quiet -print_format json -show_format -show_streams ' . escapeshellarg($localVideoPath) . ' 2>/dev/null',
+                    'ffprobe -v quiet -print_format json -show_format -show_streams ' . escapeshellarg($videoInput) . ' 2>/dev/null',
                     $ffprobeOutput,
                     $ffprobeReturnCode
                 );
@@ -211,7 +233,19 @@ class ProcessVideoJob implements ShouldQueue
             // Check if Google/YouTube is connected before attempting upload
             $googleConnected = $user->getGoogleAccessToken() || $user->google_refresh_token;
             
-            if (!$googleConnected) {
+            if ($streamFromDropbox) {
+                Log::info('Step 2: Skipping YouTube upload — source is streamed from Dropbox');
+                $results['steps'][] = ['step' => 2, 'action' => 'YouTube upload skipped — Dropbox streaming enabled', 'status' => 'skipped'];
+                $results['youtube_video_id'] = null;
+                $results['youtube_url'] = null;
+                $uploadFailed = true;
+
+                $video->update([
+                    'youtube_video_id' => null,
+                    'youtube_url' => null,
+                    'notes' => 'Source processed directly from Dropbox; local video storage and YouTube upload skipped',
+                ]);
+            } elseif (!$googleConnected) {
                 // Google not connected — skip YouTube upload, will stream from Dropbox
                 Log::info('Step 2: Skipping YouTube upload — Google not connected, will stream from Dropbox');
                 $results['steps'][] = ['step' => 2, 'action' => 'YouTube upload skipped — Google not connected', 'status' => 'skipped'];
@@ -341,9 +375,9 @@ class ProcessVideoJob implements ShouldQueue
             } // End of Google connected else block
 
             // ============================================
-            // STEP 3: EXTRACT AUDIO FROM LOCAL VIDEO
+            // STEP 3: EXTRACT AUDIO FROM VIDEO SOURCE
             // ============================================
-            Log::info('Step 3: Extracting audio from local video file');
+            Log::info('Step 3: Extracting audio from video source');
             $results['steps'][] = ['step' => 3, 'action' => 'Extracting audio', 'status' => 'started'];
 
             $processService = new ProcessService();
@@ -354,7 +388,7 @@ class ProcessVideoJob implements ShouldQueue
             $ffprobeOutput = [];
             $ffprobeReturnCode = null;
             exec(
-                'ffprobe -v quiet -select_streams a -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 ' . escapeshellarg($localVideoPath) . ' 2>/dev/null',
+                'ffprobe -v quiet -select_streams a -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 ' . escapeshellarg($videoInput) . ' 2>/dev/null',
                 $ffprobeOutput,
                 $ffprobeReturnCode
             );
@@ -375,10 +409,9 @@ class ProcessVideoJob implements ShouldQueue
                 goto cleanup_step;
             }
 
-            // Extract audio from the local video file using FFmpeg
-            // This is much more reliable than downloading from YouTube
+            // FFmpeg reads the Dropbox URL directly when streaming is enabled.
             $ffmpegArgs = [
-                '-i', $localVideoPath,
+                '-i', $videoInput,
                 '-vn',  // No video
                 '-acodec', 'libmp3lame',  // MP3 codec
                 '-ab', '192k',  // Bitrate
@@ -388,8 +421,14 @@ class ProcessVideoJob implements ShouldQueue
             ];
             
             try {
-                $processService->runFfmpeg($ffmpegArgs);
-                Log::info('Audio extracted from local video', ['audio_path' => $audioPath]);
+                $processService->runFfmpeg(
+                    $ffmpegArgs,
+                    (int) config('video-processing.ffmpeg_timeout', 10800)
+                );
+                Log::info('Audio extracted from video source', [
+                    'audio_path' => $audioPath,
+                    'source' => $streamFromDropbox ? 'dropbox_stream' : 'local_file',
+                ]);
             } catch (\Exception $e) {
                 // If FFmpeg extraction fails, try downloading from YouTube as fallback (only if YouTube URL exists)
                 if ($youtubeUrl) {
@@ -411,7 +450,7 @@ class ProcessVideoJob implements ShouldQueue
             Log::info('Audio extracted', ['size_mb' => $results['audio_size_mb']]);
 
             // Clean up local video file after extracting audio
-            if (file_exists($localVideoPath)) {
+            if ($localVideoPath && file_exists($localVideoPath)) {
                 unlink($localVideoPath);
                 Log::info('Local video file deleted', ['path' => $localVideoPath]);
             }

@@ -116,9 +116,11 @@ class ProcessService
      * @param array $args
      * @return string
      */
-    public function runFfmpeg(array $args): string
+    public function runFfmpeg(array $args, int $timeout = 300): string
     {
-        $command = array_merge(['ffmpeg'], $args);
-        return $this->run($command);
+        // Keep long-running remote streams from accumulating FFmpeg progress
+        // output in PHP memory.
+        $command = array_merge(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error'], $args);
+        return $this->run($command, $timeout);
     }
 }
