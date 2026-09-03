@@ -4,9 +4,25 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Laravel\Scout\Searchable;
+use App\Services\SearchNormalizationService;
 
 class Video extends Model
 {
+    use Searchable;
+
+    protected static function booted()
+    {
+        static::updated(function ($video) {
+            // If the video just became fully searchable (completed + approved + not archived)
+            if ($video->shouldBeSearchable() && 
+                ($video->wasChanged('processing_status') || $video->wasChanged('approval_status') || $video->wasChanged('is_archived'))) {
+                
+                \App\Jobs\ExtractVideoPhrasesJob::dispatch($video);
+            }
+        });
+    }
+
     protected $fillable = [
         'user_id',
         'dropbox_path',
@@ -48,6 +64,7 @@ class Video extends Model
         'archived_by',
         'archived_at',
         'rejection_reason',
+        'has_audio',
     ];
 
     protected $casts = [
@@ -65,6 +82,7 @@ class Video extends Model
         'approved_at' => 'datetime',
         'archived_at' => 'datetime',
         'is_archived' => 'boolean',
+        'has_audio' => 'boolean',
     ];
 
     /**
@@ -89,6 +107,14 @@ class Video extends Model
     public function archivedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'archived_by');
+    }
+
+    /**
+     * Get the video's tags
+     */
+    public function tags()
+    {
+        return $this->hasMany(VideoTag::class);
     }
 
     /**
@@ -147,10 +173,23 @@ class Video extends Model
      */
     public function markAsCompleted(): void
     {
-        $this->update([
-            'processing_status' => 'completed',
-            'processing_completed_at' => now(),
-        ]);
+        // Persist the processing result even when the external search service is
+        // unavailable. Search indexing is best-effort and must not make an
+        // otherwise successful video-processing job fail.
+        static::withoutSyncingToSearch(function () {
+            $this->update([
+                'processing_status' => 'completed',
+                'processing_completed_at' => now(),
+            ]);
+        });
+
+        try {
+            if ($this->shouldBeSearchable()) {
+                $this->searchable();
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
@@ -231,6 +270,8 @@ class Video extends Model
             'approval_status' => 'pending',
             'approved_by' => null,
             'approved_at' => null,
+            'processing_status' => 'pending',
+            'processing_error' => null,
         ]);
     }
 
@@ -294,10 +335,87 @@ class Video extends Model
      * Scope for searchable videos — only completed, approved, non-archived.
      * Use this scope everywhere search eligibility is needed.
      */
-    public function scopeSearchable($query)
+    public function scopeReadyForSearch($query)
     {
-        return $query->where('processing_status', 'completed')
+        return $query->where(function ($q) {
+                         $q->where('processing_status', 'completed')
+                           ->orWhere(function ($sq) {
+                               $sq->where('processing_status', 'failed')
+                                  ->where('has_audio', false);
+                           });
+                     })
                      ->where('approval_status', 'approved')
                      ->where('is_archived', false);
+    }
+
+    /**
+     * Determine if the model should be searchable.
+     */
+    public function shouldBeSearchable(): bool
+    {
+        $isProcessingReady = $this->processing_status === 'completed' || 
+                            ($this->processing_status === 'failed' && $this->has_audio === false);
+                            
+        return $isProcessingReady &&
+               $this->approval_status === 'approved' &&
+               !$this->is_archived;
+    }
+
+    /**
+     * Avoid unnecessary Scout calls for videos that were never in the index.
+     *
+     * Scout otherwise attempts an index deletion on every save of a pending
+     * video. If Typesense is unavailable, that can interrupt approval before
+     * the processing job is dispatched.
+     */
+    public function searchIndexShouldBeUpdated(): bool
+    {
+        if ($this->shouldBeSearchable()) {
+            return true;
+        }
+
+        $originalProcessingReady = $this->getOriginal('processing_status') === 'completed'
+            || ($this->getOriginal('processing_status') === 'failed' && $this->getOriginal('has_audio') === false);
+
+        return $originalProcessingReady
+            && $this->getOriginal('approval_status') === 'approved'
+            && !$this->getOriginal('is_archived');
+    }
+
+    /**
+     * Get the indexable data array for the model.
+     */
+    public function toSearchableArray(): array
+    {
+        // Extract array fields safely by using json_encode for complex arrays
+        $transcriptUrduStr = is_array($this->transcript_urdu) ? json_encode($this->transcript_urdu, JSON_UNESCAPED_UNICODE) : (string)$this->transcript_urdu;
+        $transcriptEnglishStr = is_array($this->transcript_english) ? json_encode($this->transcript_english, JSON_UNESCAPED_UNICODE) : (string)$this->transcript_english;
+
+        // Clean up the JSON string for better text search if needed, but Typesense handles basic JSON strings ok
+        $transcriptUrduStr = str_replace(['"', '{', '}', '[', ']', ':', ',', 'text'], ' ', $transcriptUrduStr);
+        $transcriptEnglishStr = str_replace(['"', '{', '}', '[', ']', ':', ',', 'text'], ' ', $transcriptEnglishStr);
+
+        $searchableTextUrdu = trim($transcriptUrduStr . ' ' . $this->summary_urdu);
+        $searchableTextEnglish = trim($transcriptEnglishStr . ' ' . $this->summary_english);
+
+        // Fetch manual tags if the relationship is loaded or exists
+        $manualTags = [];
+        if ($this->relationLoaded('tags') || $this->tags()->exists()) {
+            $manualTags = $this->tags->pluck('tag')->toArray();
+        }
+
+        return [
+            'id' => (string) $this->id,
+            'title' => $this->title,
+            'description' => $this->description,
+            'transcript_urdu' => $transcriptUrduStr,
+            'transcript_english' => $transcriptEnglishStr,
+            'summary_urdu' => $this->summary_urdu,
+            'summary_english' => $this->summary_english,
+            'normalized_title' => class_exists(SearchNormalizationService::class) ? SearchNormalizationService::normalizeEnglishAndRoman($this->title) : $this->title,
+            'normalized_urdu' => class_exists(SearchNormalizationService::class) ? SearchNormalizationService::normalizeUrdu($searchableTextUrdu) : $searchableTextUrdu,
+            'manual_tags' => $manualTags,
+            'created_at' => $this->created_at ? $this->created_at->timestamp : null,
+        ];
     }
 }
