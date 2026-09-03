@@ -3,7 +3,11 @@
 /public/build
 /public/hot
 /public/storage
-/storage/*.key
+/public/profiles/
+/public/voice_samples/
+/storage/
+/bootstrap/cache/*.php
+!/bootstrap/cache/.gitignore
 .env
 .env.backup
 .env.production
@@ -16,6 +20,12 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+__pycache__/
+*.py[cod]
+*.bak
+.pytest_cache/
+.coverage
+htmlcov/
 *.sqlite
 *.sqlite3
 .DS_Store
