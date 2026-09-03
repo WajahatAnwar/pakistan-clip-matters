@@ -53,13 +53,12 @@ export default function SearchPage() {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsTimerRef = useRef(null);
+  const suggestionsAbortControllerRef = useRef(null);
   const searchBoxRef = useRef(null);
   const suggestionSelectedRef = useRef(false);
 
-  // Search mode: 'semantic' (AI/vector) or 'simple' (structured filters)
-  const [searchMode, setSearchMode] = useState('semantic');
-  // Active filter type for simple mode (only one at a time)
-  const [activeFilterType, setActiveFilterType] = useState(null);
+  // Search type: smart, speaker, title, date, language, transcript, summary
+  const [selectedSearchType, setSelectedSearchType] = useState('smart');
 
   // Date filter states
   const [dateFilterType, setDateFilterType] = useState('none');
@@ -107,6 +106,9 @@ export default function SearchPage() {
       if (suggestionsTimerRef.current) {
         clearTimeout(suggestionsTimerRef.current);
       }
+      if (suggestionsAbortControllerRef.current) {
+        suggestionsAbortControllerRef.current.abort();
+      }
       if (hafizNaeemSearchTimerRef.current) {
         clearTimeout(hafizNaeemSearchTimerRef.current);
       }
@@ -131,19 +133,23 @@ export default function SearchPage() {
       clearTimeout(hafizNaeemSearchTimerRef.current);
       hafizNaeemSearchTimerRef.current = null;
     }
-  }, [searchText, searchMode, activeFilterType, dateFilterType, selectedDate, selectedLanguage]);
+  }, [searchText, selectedSearchType, dateFilterType, selectedDate, selectedLanguage]);
 
-  // Disable Hafiz Naeem toggle when switching to simple mode with active filter
+  // Disable Hafiz Naeem toggle when selecting a filter other than smart
   useEffect(() => {
-    if (searchMode === 'simple' && activeFilterType && isHafizNaeemOnly) {
+    if (selectedSearchType !== 'smart' && isHafizNaeemOnly) {
       console.log('🔄 Auto-disabling Hafiz Naeem toggle - simple mode active');
       setIsHafizNaeemOnly(false);
     }
-  }, [searchMode, activeFilterType]);
+  }, [selectedSearchType]);
 
   // Fetch video filename suggestions as user types
   useEffect(() => {
     if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+    if (suggestionsAbortControllerRef.current) {
+      suggestionsAbortControllerRef.current.abort();
+      suggestionsAbortControllerRef.current = null;
+    }
 
     // Skip fetch when text was programmatically set from a suggestion click
     if (suggestionSelectedRef.current) {
@@ -151,22 +157,44 @@ export default function SearchPage() {
       return;
     }
 
-    if (!searchText.trim() || searchText.trim().length < 1) {
+    if (!searchText.trim() || searchText.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
 
     suggestionsTimerRef.current = setTimeout(async () => {
+      const suggestionController = new AbortController();
+      suggestionsAbortControllerRef.current = suggestionController;
       try {
-        const res = await fetch(route('user.video.suggestions') + '?q=' + encodeURIComponent(searchText.trim()));
+        const res = await fetch('/api/search/suggestions?q=' + encodeURIComponent(searchText.trim()), {
+          signal: suggestionController.signal,
+        });
         if (res.ok) {
-          const data = await res.json();
+          const jsonResponse = await res.json();
+          // The new API returns { success: true, data: [...] }
+          const data = jsonResponse.data || [];
           setSuggestions(data);
           setShowSuggestions(data.length > 0);
         }
-      } catch { /* ignore */ }
-    }, 300);
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.warn('Autocomplete request failed:', error);
+        }
+      } finally {
+        if (suggestionsAbortControllerRef.current === suggestionController) {
+          suggestionsAbortControllerRef.current = null;
+        }
+      }
+    }, 500);
+
+    return () => {
+      if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+      if (suggestionsAbortControllerRef.current) {
+        suggestionsAbortControllerRef.current.abort();
+        suggestionsAbortControllerRef.current = null;
+      }
+    };
   }, [searchText]);
 
   // Close suggestions when clicking outside
@@ -182,7 +210,7 @@ export default function SearchPage() {
 
   // Memoize the fetch function — unified search that combines semantic + keyword + exact match
   const fetchSearchResults = useCallback(async (signal, query, speakerFilterActive) => {
-    console.log('🔍 Starting search:', { query, speakerFilterActive, searchMode, activeFilterType, dateFilterType, selectedDate });
+    console.log('🔍 Starting search:', { query, speakerFilterActive, selectedSearchType, dateFilterType, selectedDate });
 
     try {
       let requestBody = {
@@ -192,6 +220,7 @@ export default function SearchPage() {
         per_page: 10, // 10 results per page
         use_incremental: true, // Enable cursor-based incremental pagination
         batch_size: 10, // Request 10 videos per batch for consistent pagination
+        search_type: selectedSearchType,
       };
 
       // Helper: split query into clean words (used by both semantic and speaker search)
@@ -222,23 +251,8 @@ export default function SearchPage() {
       };
 
       // ── HAFIZ NAEEM SPEAKER SEARCH (priority — works in any mode) ──
-      // FIXED: When custom query is provided with toggle, ONLY search the query
-      // Don't add speaker filter - let user search any content with their custom query
       if (speakerFilterActive) {
-        requestBody.search_mode = 'semantic';
-
-        // Add date filter if applicable
-        if (dateFilterType !== 'none' && selectedDate) {
-          const date = dayjs(selectedDate);
-          if (dateFilterType === 'year') {
-            requestBody.filter_year = date.year();
-          } else if (dateFilterType === 'month') {
-            requestBody.filter_year = date.year();
-            requestBody.filter_month = date.month() + 1;
-          } else if (dateFilterType === 'date') {
-            requestBody.filter_date = date.format('YYYY-MM-DD');
-          }
-        }
+        requestBody.search_type = 'smart'; // Forces semantic mode for Hafiz Naeem
 
         // CRITICAL FIX: Only send query/words, NOT speaker filter
         // This allows users to search any content when toggle is active
@@ -247,65 +261,35 @@ export default function SearchPage() {
           requestBody.words = splitToCleanWords(query, 2);
         } else {
           // No custom query - default to searching for Hafiz Naeem speaker segments
-          requestBody.speaker = "Hafiz Naeem Ur Rehman";
+          requestBody.search_type = 'speaker';
+          requestBody.query = "Hafiz Naeem Ur Rehman";
         }
-
-        console.log('📤 Speaker filter payload:', requestBody);
-      // ── SIMPLE MODE ──
-      } else if (searchMode === 'simple' && activeFilterType) {
-        requestBody.search_mode = 'simple';
-        requestBody.filter_type = activeFilterType;
-
-        // Populate filter-specific fields
-        if (activeFilterType === 'date') {
-          if (dateFilterType !== 'none' && selectedDate) {
-            const date = dayjs(selectedDate);
-            if (dateFilterType === 'year') requestBody.filter_year = date.year();
-            else if (dateFilterType === 'month') {
-              requestBody.filter_year = date.year();
-              requestBody.filter_month = date.month() + 1;
-            } else if (dateFilterType === 'date') {
-              requestBody.filter_date = date.format('YYYY-MM-DD');
-            }
-          }
-        } else if (activeFilterType === 'speaker') {
-          requestBody.speaker = query || '';
-        } else if (activeFilterType === 'title') {
-          requestBody.title = query || '';
-        } else if (activeFilterType === 'summary') {
-          requestBody.query = query || '';
-        } else if (activeFilterType === 'language') {
-          requestBody.language = selectedLanguage || '';
-          requestBody.query = query || '';
-        } else if (activeFilterType === 'text') {
-          requestBody.query = query || '';
-        }
-
-        console.log('📤 Simple mode payload:', requestBody);
       } else {
-        // ── SEMANTIC MODE (default) ──
-        requestBody.search_mode = 'semantic';
-
-        // Add date filter if applicable
-        if (dateFilterType !== 'none' && selectedDate) {
-          const date = dayjs(selectedDate);
-          if (dateFilterType === 'year') {
-            requestBody.filter_year = date.year();
-          } else if (dateFilterType === 'month') {
-            requestBody.filter_month = date.month() + 1;
-            requestBody.filter_year = date.year();
-          } else if (dateFilterType === 'date') {
-            requestBody.filter_date = date.format('YYYY-MM-DD');
-          }
-        }
-
+        // ── REGULAR SEARCH ──
         if (query) {
           requestBody.query = query;
           requestBody.words = splitToCleanWords(query, 2);
         }
-
-        console.log('📤 Semantic mode payload:', requestBody);
+        
+        if (selectedSearchType === 'language') {
+          requestBody.language = selectedLanguage || '';
+        }
       }
+
+      // Add date filter if applicable
+      if (dateFilterType !== 'none' && selectedDate) {
+        const date = dayjs(selectedDate);
+        if (dateFilterType === 'year') {
+          requestBody.filter_year = date.year();
+        } else if (dateFilterType === 'month') {
+          requestBody.filter_month = date.month() + 1;
+          requestBody.filter_year = date.year();
+        } else if (dateFilterType === 'date') {
+          requestBody.filter_date = date.format('YYYY-MM-DD');
+        }
+      }
+
+      console.log('📤 Search payload:', requestBody);
 
       const response = await fetch(
         route('videos.embeddings.search'),
@@ -334,6 +318,9 @@ export default function SearchPage() {
 
       if (!response.ok) {
         const errorMsg =
+          ([504, 524].includes(response.status)
+            ? 'Search timed out. Please retry in a moment.'
+            : null) ||
           data?.message ||
           data?.errors?.query?.[0] ||
           data?.errors?.speaker?.[0] ||
@@ -353,7 +340,7 @@ export default function SearchPage() {
           videos: [],
           query: query,
           searchMode: data.search_mode === 'simple'
-            ? `simple_${activeFilterType || 'unknown'}`
+            ? `simple_${data.filter_type || 'unknown'}`
             : (speakerFilterActive ? 'speaker' : 'semantic'),
           totalVideos: 0,
           totalSegments: 0,
@@ -390,7 +377,7 @@ export default function SearchPage() {
           videos: data.grouped_by_video,
           query: query,
           searchMode: data.search_mode === 'simple'
-            ? `simple_${activeFilterType || 'unknown'}`
+            ? `simple_${data.filter_type || 'unknown'}`
             : (speakerFilterActive ? 'speaker' : 'semantic'),
           totalVideos: data.total_videos,
           totalSegments: data.total_segments,
@@ -436,7 +423,7 @@ export default function SearchPage() {
     } finally {
       console.log('🏁 Search cleanup complete');
     }
-  }, [searchMode, activeFilterType, dateFilterType, selectedDate, selectedLanguage]);
+  }, [selectedSearchType, dateFilterType, selectedDate, selectedLanguage]);
 
   const isNumericQuery = (text) => {
     return /^\d+$/.test(text);
@@ -479,63 +466,49 @@ export default function SearchPage() {
     intentionalSearchRef.current = true;
     setIsHafizNaeemOnly(false);
 
-    if (searchMode === 'simple') {
-
-      if (activeFilterType === 'date' && hasDateFilter) {
-        console.log('✅ Starting simple date search...');
+    if (selectedSearchType === 'date' && hasDateFilter) {
+      console.log('✅ Starting date search...');
       setIsSearching(true);
       setSearchError(null);
-        fetchSearchResults(abortController.signal, trimmedSearch, false);
-      }
+      fetchSearchResults(abortController.signal, trimmedSearch, false);
+    } else if (selectedSearchType === 'language' && selectedLanguage) {
+      console.log('✅ Starting language search...');
+      setIsSearching(true);
+      setSearchError(null);
+      fetchSearchResults(abortController.signal, trimmedSearch, false);
+    } else if (['speaker', 'title', 'summary', 'transcript'].includes(selectedSearchType) && trimmedSearch.length >= 1) {
+      console.log(`✅ Starting ${selectedSearchType} search...`);
+      setIsSearching(true);
+      setSearchError(null);
+      fetchSearchResults(abortController.signal, trimmedSearch, false);
+    } else if (selectedSearchType === 'smart' && (trimmedSearch.length >= 2 || hasDateFilter)) {
+      console.log('✅ Starting smart search...');
 
-      else if (activeFilterType === 'language' && selectedLanguage) {
-        console.log('✅ Starting simple language search...');
-        setIsSearching(true);
-        setSearchError(null);
-        fetchSearchResults(abortController.signal, trimmedSearch, false);
-      }
+      // Check if query is about Hafiz Naeem
+      const isQueryAboutHafizNaeem = trimmedSearch.toLowerCase().includes('hafiz') &&
+        trimmedSearch.toLowerCase().includes('naeem');
+      const queryChanged = trimmedSearch !== lastSearchQueryRef.current;
 
-      else if (activeFilterType && activeFilterType !== 'date' && activeFilterType !== 'language' && trimmedSearch.length >= 1) {
-        console.log(`✅ Starting simple ${activeFilterType} search...`);
-        setIsSearching(true);
-        setSearchError(null);
-        fetchSearchResults(abortController.signal, trimmedSearch, false);
-      } else {
-        console.warn('⚠️ Search conditions not met for simple mode');
-      }
-
-    } else {
-
-      if ((trimmedSearch.length >= 2 || hasDateFilter)) {
-        console.log('✅ Starting semantic search...');
-
-        // Check if query is about Hafiz Naeem
-        const isQueryAboutHafizNaeem = trimmedSearch.toLowerCase().includes('hafiz') &&
-          trimmedSearch.toLowerCase().includes('naeem');
-        const queryChanged = trimmedSearch !== lastSearchQueryRef.current;
-
-        // Calculate shouldUseHafizFilter BEFORE state update (state update is async)
-        let shouldUseHafizFilter = false;
-        if (isHafizNaeemOnly) {
-          if (queryChanged && !isQueryAboutHafizNaeem) {
-            // Query changed to something NOT about Hafiz Naeem - disable filter for THIS search
-            console.log('🔄 Auto-disabling Hafiz Naeem filter - query changed to:', trimmedSearch);
-            shouldUseHafizFilter = false;  // Don't use filter for THIS search
-          } else if (isQueryAboutHafizNaeem) {
-            // Query is about Hafiz Naeem - keep filter
-            shouldUseHafizFilter = true;
-          }
+      // Calculate shouldUseHafizFilter BEFORE state update (state update is async)
+      let shouldUseHafizFilter = false;
+      if (isHafizNaeemOnly) {
+        if (queryChanged && !isQueryAboutHafizNaeem) {
+          // Query changed to something NOT about Hafiz Naeem - disable filter for THIS search
+          console.log('🔄 Auto-disabling Hafiz Naeem filter - query changed to:', trimmedSearch);
+          shouldUseHafizFilter = false;  // Don't use filter for THIS search
+        } else if (isQueryAboutHafizNaeem) {
+          // Query is about Hafiz Naeem - keep filter
+          shouldUseHafizFilter = true;
         }
-
-        lastSearchQueryRef.current = trimmedSearch;
-
-        setIsSearching(true);
-        setSearchError(null);
-        fetchSearchResults(abortController.signal, trimmedSearch, shouldUseHafizFilter);
-      } else {
-        console.warn('⚠️ Search conditions not met for semantic mode');
       }
 
+      lastSearchQueryRef.current = trimmedSearch;
+
+      setIsSearching(true);
+      setSearchError(null);
+      fetchSearchResults(abortController.signal, trimmedSearch, shouldUseHafizFilter);
+    } else {
+      console.warn('⚠️ Search conditions not met');
     }
   };
 
@@ -545,29 +518,15 @@ export default function SearchPage() {
     const hasDateFilter = dateFilterType !== 'none' && selectedDate;
     const numericSearch = isNumericQuery(trimmedSearch);
 
-    if (searchMode === 'simple') {
-      if (!activeFilterType) return false;
-
-      if (activeFilterType === 'date') {
-        return hasDateFilter;
-      }
-
-      if (activeFilterType === 'language') {
-        return selectedLanguage !== '';
-      }
-
-      if (numericSearch) {
-        return trimmedSearch.length >= 2;
-      }
-
+    if (selectedSearchType === 'date') return hasDateFilter;
+    if (selectedSearchType === 'language') return selectedLanguage !== '';
+    if (['speaker', 'title', 'summary', 'transcript'].includes(selectedSearchType)) {
+      if (numericSearch) return trimmedSearch.length >= 2;
       return trimmedSearch.length >= 1;
     }
-
-    // semantic mode
-    if (numericSearch) {
-      return trimmedSearch.length >= 2;
-    }
-
+    
+    // smart mode
+    if (numericSearch) return trimmedSearch.length >= 2;
     return trimmedSearch.length >= 2 || hasDateFilter;
   };
 
@@ -776,15 +735,13 @@ export default function SearchPage() {
               }
             }}
             placeholder={
-              searchMode === 'simple'
-                ? (activeFilterType === 'speaker' ? (t('searchPage.searchBySpeaker') || 'Enter speaker name...')
-                  : activeFilterType === 'title' ? (t('searchPage.searchByTitle') || 'Enter video title...')
-                    : activeFilterType === 'language' ? (t('searchPage.selectLanguage') || 'Select language below...')
-                      : activeFilterType === 'summary' ? (t('searchPage.searchBySummary') || 'Enter summary keywords...')
-                        : activeFilterType === 'text' ? (t('searchPage.searchByText') || 'Search transcript text...')
-                          : activeFilterType === 'date' ? (t('searchPage.searchOptional') || 'Optional text (select date below)')
-                            : (t('searchPage.selectFilter') || 'Select a filter type above...'))
-                : (isHafizNaeemOnly ? t('searchPage.searchBySpeaker') : t('searchPage.searchByMeaning'))
+              selectedSearchType === 'speaker' ? (t('searchPage.searchBySpeaker') || 'Enter speaker name...')
+              : selectedSearchType === 'title' ? (t('searchPage.searchByTitle') || 'Enter video title...')
+              : selectedSearchType === 'language' ? (t('searchPage.selectLanguage') || 'Select language below...')
+              : selectedSearchType === 'summary' ? (t('searchPage.searchBySummary') || 'Enter summary keywords...')
+              : selectedSearchType === 'transcript' ? (t('searchPage.searchByText') || 'Search transcript text...')
+              : selectedSearchType === 'date' ? (t('searchPage.searchOptional') || 'Optional text (select date below)')
+              : (isHafizNaeemOnly ? t('searchPage.searchBySpeaker') : t('searchPage.searchByMeaning'))
             }
             onKeyPress={(e) => {
               if (e.key === 'Enter' && isSearchEnabled()) {
@@ -885,14 +842,15 @@ export default function SearchPage() {
                 }}
               >
                 <List dense disablePadding>
-                  {suggestions.map((video) => (
+                  {suggestions.map((item) => (
                     <ListItemButton
-                      key={video.id}
+                      key={item.id}
                       onClick={() => {
                         suggestionSelectedRef.current = true;
-                        setSearchText(video.title || video.filename);
+                        setSearchText(item.phrase);
                         setSuggestions([]);
                         setShowSuggestions(false);
+                        handleSearch(new Event('submit'));
                       }}
                       sx={{
                         px: 2,
@@ -901,12 +859,10 @@ export default function SearchPage() {
                         borderBottom: '1px solid rgba(255,255,255,0.05)',
                       }}
                     >
-                      <VideoFileIcon sx={{ color: '#EE1D52', mr: 1.5, fontSize: 20 }} />
+                      <SearchIcon sx={{ color: 'rgba(255,255,255,0.5)', mr: 1.5, fontSize: 20 }} />
                       <ListItemText
-                        primary={video.title || video.filename}
-                        secondary={video.title ? video.filename : null}
+                        primary={item.phrase}
                         primaryTypographyProps={{ sx: { color: 'white', fontSize: '0.875rem' } }}
-                        secondaryTypographyProps={{ sx: { color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem' } }}
                       />
                     </ListItemButton>
                   ))}
@@ -915,132 +871,61 @@ export default function SearchPage() {
             )}
           </Box>
 
-          {/* Search Mode Toggle */}
+          {/* Search Types Selector */}
           <Box sx={{
             display: 'flex',
             justifyContent: 'center',
-            mb: 0.5
+            mb: 1
           }}>
-            <ToggleButtonGroup
-              value={searchMode}
-              exclusive
-              onChange={(e, newMode) => {
-                if (newMode) {
-                  setSearchMode(newMode);
+            <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 160 } }}>
+              <Select
+                value={selectedSearchType}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedSearchType(val);
                   setSearchError(null);
-                  if (newMode === 'semantic') {
-                    setActiveFilterType(null);
+                  
+                  // Handle date specific resets
+                  if (val === 'date') {
+                    setDateFilterType('year');
                   } else {
-                    // Reset semantic-specific state when switching to simple
-                    setIsHafizNaeemOnly(false);
+                    setDateFilterType('none');
+                    setSelectedDate(null);
                   }
-                }
-              }}
-              size="small"
-              sx={{
-                bgcolor: 'rgba(55, 65, 81, 0.5)',
-                borderRadius: '20px',
-                border: 'none',
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: '20px !important',
-                  color: 'rgba(255,255,255,0.6)',
-                  textTransform: 'none',
-                  px: { xs: 2, sm: 3 },
-                  py: { xs: 0.5, sm: 0.75 },
-                  fontSize: { xs: '0.75rem', sm: '0.85rem' },
-                  fontWeight: 500,
-                  gap: 0.75,
-                  '&.Mui-selected': {
-                    bgcolor: '#EE1D52 !important',
-                    color: 'white !important',
-                    fontWeight: 600,
-                  },
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.1)',
+                  
+                  // Handle language specific resets
+                  if (val === 'language') {
+                    setSelectedLanguage('');
+                    setSearchText('');
+                  } else {
+                    setSelectedLanguage('');
                   }
-                }
-              }}
-            >
-              <ToggleButton value="semantic">
-                <PsychologyIcon sx={{ fontSize: { xs: 16, sm: 18 } }} />
-                {t('searchPage.semantic')}
-              </ToggleButton>
-              <ToggleButton value="simple">
-                <TuneIcon sx={{ fontSize: { xs: 16, sm: 18 } }} />
-                {t('searchPage.simple')}
-              </ToggleButton>
-            </ToggleButtonGroup>
+                }}
+                displayEmpty
+                sx={{
+                  bgcolor: 'rgba(55, 65, 81, 0.7)',
+                  color: 'white',
+                  borderRadius: '16px',
+                  fontSize: { xs: '0.8rem', sm: '0.85rem' },
+                  height: { xs: 36, sm: 40 },
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                  '& .MuiSvgIcon-root': { color: 'white' },
+                  '&:hover': { bgcolor: 'rgba(55, 65, 81, 0.9)' }
+                }}
+              >
+                <MenuItem value="smart">🧠 AI Smart Search</MenuItem>
+                <MenuItem value="speaker">🎤 Search by Speaker</MenuItem>
+                <MenuItem value="title">📝 Search by Title</MenuItem>
+                <MenuItem value="date">📅 Search by Date</MenuItem>
+                <MenuItem value="language">🌐 Search by Language</MenuItem>
+                <MenuItem value="summary">📄 Search in Summary</MenuItem>
+                <MenuItem value="transcript">🔤 Search in Transcript</MenuItem>
+              </Select>
+            </FormControl>
           </Box>
 
-          {/* Simple Mode: Filter Type Selector (one at a time) */}
-          {searchMode === 'simple' && (
-            <Box sx={{
-              display: 'flex',
-              gap: { xs: 0.75, sm: 1 },
-              flexWrap: 'wrap',
-              justifyContent: 'center'
-            }}>
-              {[
-                { key: 'speaker', label: t('searchPage.filterSpeaker') || 'Speaker', icon: '🎤' },
-                { key: 'title', label: t('searchPage.filterTitle') || 'Title', icon: '📝' },
-                { key: 'date', label: t('searchPage.filterDate') || 'Date', icon: '📅' },
-                { key: 'language', label: t('searchPage.filterLanguage') || 'Language', icon: '🌐' },
-                { key: 'summary', label: t('searchPage.filterSummary') || 'Summary', icon: '📄' },
-                { key: 'text', label: t('searchPage.filterText') || 'Text', icon: '🔤' },
-              ].map(({ key, label, icon }) => (
-                <Button
-                  key={key}
-                  variant={activeFilterType === key ? 'contained' : 'outlined'}
-                  size="small"
-                  onClick={() => {
-                    const newFilterType = activeFilterType === key ? null : key;
-                    setActiveFilterType(newFilterType);
-                    setSearchError(null);
-                    // Disable Hafiz Naeem toggle when any filter is selected in simple mode
-                    if (newFilterType !== null) {
-                      setIsHafizNaeemOnly(false);
-                    }
-                    // If switching to date, init date filter
-                    if (key === 'date' && activeFilterType !== 'date') {
-                      setDateFilterType('year');
-                    } else if (key !== 'date') {
-                      setDateFilterType('none');
-                      setSelectedDate(null);
-                    }
-                    // If switching to language, reset language selection and clear search text
-                    if (key === 'language' && activeFilterType !== 'language') {
-                      setSelectedLanguage('');
-                      setSearchText('');
-                    } else if (key !== 'language') {
-                      setSelectedLanguage('');
-                    }
-                  }}
-                  sx={{
-                    borderRadius: '16px',
-                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                    fontWeight: activeFilterType === key ? 600 : 400,
-                    textTransform: 'none',
-                    px: { xs: 1.5, sm: 2 },
-                    py: { xs: 0.4, sm: 0.5 },
-                    minWidth: 'auto',
-                    color: activeFilterType === key ? 'white' : 'rgba(255,255,255,0.7)',
-                    borderColor: activeFilterType === key ? '#EE1D52' : 'rgba(255,255,255,0.2)',
-                    bgcolor: activeFilterType === key ? '#EE1D52' : 'transparent',
-                    '&:hover': {
-                      bgcolor: activeFilterType === key ? '#dc1847' : 'rgba(255,255,255,0.1)',
-                      borderColor: activeFilterType === key ? '#dc1847' : 'rgba(255,255,255,0.4)',
-                    }
-                  }}
-                >
-                  {icon} {label}
-                </Button>
-              ))}
-            </Box>
-          )}
-
-          {/* Language Filter — shown only when language filter is active in simple mode */}
-          {searchMode === 'simple' && activeFilterType === 'language' && (
+          {/* Language Filter — shown only when language filter is active */}
+          {selectedSearchType === 'language' && (
             <Box sx={{
               display: 'flex',
               justifyContent: 'center',
@@ -1078,8 +963,8 @@ export default function SearchPage() {
             </Box>
           )}
 
-          {/* Date Filter — shown in semantic mode always, in simple mode only when date filter active */}
-          {(searchMode === 'semantic' || activeFilterType === 'date') && (
+          {/* Date Filter — shown for smart and date */}
+          {(selectedSearchType === 'smart' || selectedSearchType === 'date') && (
             <Box sx={{
               display: 'flex',
               gap: { xs: 1, sm: 1.5 },
@@ -1103,7 +988,7 @@ export default function SearchPage() {
                     '&:hover': { bgcolor: 'rgba(55, 65, 81, 0.9)' }
                   }}
                 >
-                  {searchMode === 'semantic' && <MenuItem value="none">No Date Filter</MenuItem>}
+                  {selectedSearchType === 'smart' && <MenuItem value="none">No Date Filter</MenuItem>}
                   <MenuItem value="year">Filter by Year</MenuItem>
                   <MenuItem value="month">Filter by Month</MenuItem>
                   <MenuItem value="date">Filter by Date</MenuItem>
@@ -1208,8 +1093,8 @@ export default function SearchPage() {
             {/* Hafiz Naeem Avatar — shown in both semantic and simple modes */}
             <Tooltip
               title={
-                (searchMode === 'simple' && activeFilterType)
-                  ? 'Disabled in Simple mode with active filter'
+                (selectedSearchType !== 'smart')
+                  ? 'Disabled when a specific search filter is active'
                   : (isHafizNaeemOnly ? t('searchPage.hafizNaeemActive') || 'Searching Hafiz Naeem - Click to disable' : t('searchPage.hafizNaeemInactive') || 'Click to search Hafiz Naeem only')
               }
               arrow
@@ -1218,8 +1103,8 @@ export default function SearchPage() {
               <Box sx={{ position: 'relative' }}>
                 <IconButton
                   onClick={() => {
-                    // Don't allow toggle in simple mode with active filter
-                    if (searchMode === 'simple' && activeFilterType) {
+                    // Don't allow toggle when a filter other than smart is active
+                    if (selectedSearchType !== 'smart') {
                       return;
                     }
 
@@ -1260,7 +1145,7 @@ export default function SearchPage() {
                       }
                     }
                   }}
-                  disabled={isSearching || (searchMode === 'simple' && activeFilterType !== null)}
+                  disabled={isSearching || selectedSearchType !== 'smart'}
                   sx={{
                     p: 0,
                     transition: 'all 0.3s ease',
@@ -1280,9 +1165,9 @@ export default function SearchPage() {
                         ? '0 0 20px rgba(238, 29, 82, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4)'
                         : '0 4px 12px rgba(0, 0, 0, 0.3)',
                       transition: 'all 0.3s ease',
-                      cursor: (isSearching || (searchMode === 'simple' && activeFilterType)) ? 'not-allowed' : 'pointer',
-                      filter: (isSearching || (searchMode === 'simple' && activeFilterType)) ? 'brightness(0.7)' : 'brightness(1)',
-                      opacity: (isSearching || (searchMode === 'simple' && activeFilterType)) ? 0.5 : 1,
+                      cursor: (isSearching || selectedSearchType !== 'smart') ? 'not-allowed' : 'pointer',
+                      filter: (isSearching || selectedSearchType !== 'smart') ? 'brightness(0.7)' : 'brightness(1)',
+                      opacity: (isSearching || selectedSearchType !== 'smart') ? 0.5 : 1,
                       '&:hover': {
                         border: isHafizNaeemOnly ? '3px solid #dc1847' : '3px solid rgba(255, 255, 255, 0.6)',
                         boxShadow: isHafizNaeemOnly

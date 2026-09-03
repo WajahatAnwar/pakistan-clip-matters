@@ -367,7 +367,8 @@
       "pending": "Pending",
       "approved": "Approved",
       "rejected": "Rejected",
-      "archived": "Archived"
+      "archived": "Archived",
+      "failed": "Failed"
     },
     "buttons": {
       "preview": "Preview",
@@ -388,6 +389,8 @@
       "unsupported": "Your browser does not support the video tag.",
       "formatNotSupported": "Format Not Supported for Browser Preview",
       "formatNotSupportedDesc": "This video format cannot be played directly in the browser. Supported formats are: MP4, WebM, OGG. You can download the video or view it in Dropbox.",
+      "codecNotSupported": "Codec Not Supported for Browser Preview",
+      "codecNotSupportedDesc": "This video uses an unsupported codec (like HEVC/H.265) which cannot be played directly in your browser. You can download the video or view it in Dropbox.",
       "downloadButton": "Download Video",
       "openInDropbox": "Open in Dropbox"
     },
@@ -412,6 +415,8 @@
     "noApprovedSubtitle": "Approved videos will appear here",
     "noRejected": "No rejected videos",
     "noRejectedSubtitle": "Rejected videos will appear here",
+    "noFailed": "No failed videos",
+    "noFailedSubtitle": "There are no videos that have failed processing",
     "reject": {
       "title": "Reject Video",
       "reasonLabel": "Reason for rejection",

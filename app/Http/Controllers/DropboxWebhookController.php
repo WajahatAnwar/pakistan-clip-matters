@@ -317,7 +317,7 @@ class DropboxWebhookController extends Controller
             $user = User::where('dropbox_team_member_id', $memberId)->first();
             
             if (!$user) {
-                Log::warning('No user found for team member. Skipping to avoid 422 no_permission error.', [
+                Log::info('No user found for team member. Skipping to avoid 422 no_permission error.', [
                     'team_id' => $teamId,
                     'member_id' => $memberId
                 ]);
@@ -371,6 +371,12 @@ class DropboxWebhookController extends Controller
             foreach ($changes['entries'] as $entry) {
                 $tag = $entry['.tag'] ?? '';
                 $path = $entry['path_display'] ?? $entry['path_lower'] ?? '';
+                
+                // Skip files in the local folder
+                if (strpos(strtolower($path), '/local/') !== false) {
+                    Log::info('Skipping file in local folder', ['path' => $path]);
+                    continue;
+                }
                 
                 Log::info('Processing Dropbox entry', [
                     'tag' => $tag,

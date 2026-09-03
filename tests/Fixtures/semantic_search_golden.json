@@ -1,0 +1,122 @@
+[
+  {
+    "id": "speaker_topic_democracy",
+    "query": "Hafiz Naeem ur Rehman Speech on Democracy",
+    "expected": "relevant",
+    "category": "government_and_law"
+  },
+  {
+    "id": "speaker_topic_constitution",
+    "query": "Hafiz Naeem ur Rehman Speech on Constitution of Pakistan",
+    "expected": "relevant_if_present",
+    "category": "government_and_law"
+  },
+  {
+    "id": "speaker_topic_electoral_reforms",
+    "query": "Hafiz Naeem ur Rehman Speech on Electoral Reforms",
+    "expected": "relevant_if_present",
+    "category": "democracy_and_elections"
+  },
+  {
+    "id": "speaker_topic_public_mandate",
+    "query": "Hafiz Naeem ur Rehman Speech on Public Mandate",
+    "expected": "relevant_if_present",
+    "category": "democracy_and_elections"
+  },
+  {
+    "id": "speaker_topic_electricity_bills",
+    "query": "Hafiz Naeem ur Rehman Speech on Electricity Bills",
+    "expected": "relevant_if_present",
+    "category": "energy_and_utilities"
+  },
+  {
+    "id": "speaker_topic_load_shedding",
+    "query": "Hafiz Naeem ur Rehman Speech on Load Shedding",
+    "expected": "relevant_if_present",
+    "category": "energy_and_utilities"
+  },
+  {
+    "id": "speaker_topic_education_reform",
+    "query": "Hafiz Naeem ur Rehman Speech on Education Reform",
+    "expected": "relevant_if_present",
+    "category": "education_and_employment"
+  },
+  {
+    "id": "speaker_topic_local_government",
+    "query": "Hafiz Naeem ur Rehman Speech on Local Government System",
+    "expected": "relevant_if_present",
+    "category": "karachi_and_local_government"
+  },
+  {
+    "id": "speaker_topic_federalism",
+    "query": "Hafiz Naeem ur Rehman Speech on Federalism",
+    "expected": "relevant_if_present",
+    "category": "government_and_law"
+  },
+  {
+    "id": "speaker_topic_social_justice",
+    "query": "Hafiz Naeem ur Rehman Speech on Social Justice",
+    "expected": "relevant_if_present",
+    "category": "rights_and_social_issues"
+  },
+  {
+    "id": "speaker_topic_hope_for_pakistan",
+    "query": "Hafiz Naeem ur Rehman Speech on Hope for Pakistan",
+    "expected": "relevant_if_present",
+    "category": "national_development"
+  },
+  {
+    "id": "speaker_topic_peoples_power",
+    "query": "Hafiz Naeem ur Rehman Speech on People's Power",
+    "expected": "relevant_if_present",
+    "category": "democracy_and_elections"
+  },
+  {
+    "id": "speaker_topic_community_service",
+    "query": "Hafiz Naeem ur Rehman Speech on Community Service",
+    "expected": "relevant_if_present",
+    "category": "rights_and_social_issues"
+  },
+  {
+    "id": "speaker_topic_rule_of_law",
+    "query": "Hafiz Naeem ur Rehman Speech on Rule of Law",
+    "expected": "relevant_if_present",
+    "category": "government_and_law"
+  },
+  {
+    "id": "speaker_topic_parliament",
+    "query": "Hafiz Naeem ur Rehman Speech on Parliament",
+    "expected": "relevant_if_present",
+    "category": "government_and_law"
+  },
+  {
+    "id": "speaker_topic_electoral_transparency",
+    "query": "Hafiz Naeem ur Rehman Speech on Electoral Transparency",
+    "expected": "relevant_if_present",
+    "category": "democracy_and_elections"
+  },
+  {
+    "id": "speaker_topic_constitutional_rights",
+    "query": "Hafiz Naeem ur Rehman Speech on Constitutional Rights",
+    "expected": "relevant_if_present",
+    "category": "government_and_law"
+  },
+  {
+    "id": "speaker_topic_political_stability",
+    "query": "Hafiz Naeem ur Rehman Speech on Political Stability",
+    "expected": "relevant_if_present",
+    "category": "government_and_law"
+  },
+  {
+    "id": "negative_person_topic",
+    "query": "Bill Gates talked about weather",
+    "expected": "no_results",
+    "category": "negative_control"
+  },
+  {
+    "id": "negative_unrelated_domain",
+    "query": "Minecraft redstone castle tutorial",
+    "expected": "no_results",
+    "category": "negative_control"
+  }
+]

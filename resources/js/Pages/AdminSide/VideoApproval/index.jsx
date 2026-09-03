@@ -17,6 +17,7 @@ import Pending from './Pending';
 import Approved from './Approved';
 import Rejected from './Rejected';
 import Archived from './Archived';
+import Failed from './Failed';
 
 // Browser-supported video formats for HTML5 video element
 const BROWSER_SUPPORTED_FORMATS = ['mp4', 'webm', 'ogg', 'ogv'];
@@ -45,14 +46,15 @@ export default function Index({ canViewArchived, canManageVideos }) {
   const [previewFormat, setPreviewFormat] = useState('');
   const [previewFilename, setPreviewFilename] = useState('');
   const [dropboxPreviewUrl, setDropboxPreviewUrl] = useState('');
+  const [videoError, setVideoError] = useState(false);
   // Tab configuration based on role
   const tabs = canViewArchived 
-    ? ['archived', 'pending', 'approved', 'rejected']
-    : ['pending', 'approved', 'rejected'];
+    ? ['archived', 'pending', 'approved', 'rejected', 'failed']
+    : ['pending', 'approved', 'rejected', 'failed'];
   
   const tabLabels = canViewArchived
-    ? [t('videoApproval.tabs.archived'), t('videoApproval.tabs.pending'), t('videoApproval.tabs.approved'), t('videoApproval.tabs.rejected')]
-    : [t('videoApproval.tabs.pending'), t('videoApproval.tabs.approved'), t('videoApproval.tabs.rejected')];
+    ? [t('videoApproval.tabs.archived'), t('videoApproval.tabs.pending'), t('videoApproval.tabs.approved'), t('videoApproval.tabs.rejected'), t('videoApproval.tabs.failed') || 'Failed']
+    : [t('videoApproval.tabs.pending'), t('videoApproval.tabs.approved'), t('videoApproval.tabs.rejected'), t('videoApproval.tabs.failed') || 'Failed'];
 
   const handleTabChange = (event, newValue) => {
     setCurrentTab(newValue);
@@ -332,6 +334,7 @@ export default function Index({ canViewArchived, canManageVideos }) {
     setDropboxPreviewUrl('');
     setPreviewFormat('');
     setPreviewFilename('');
+    setVideoError(false);
     setPreviewLoading(true);
     setPreviewTitle(videoTitle);
     
@@ -398,6 +401,7 @@ export default function Index({ canViewArchived, canManageVideos }) {
     setPreviewTitle('');
     setPreviewFormat('');
     setPreviewFilename('');
+    setVideoError(false);
   };
 
   const handleDownloadVideo = () => {
@@ -518,6 +522,8 @@ export default function Index({ canViewArchived, canManageVideos }) {
         return <Approved {...commonProps} />;
       case 'rejected':
         return <Rejected {...commonProps} />;
+      case 'failed':
+        return <Failed {...commonProps} />;
       case 'pending':
       default:
         return <Pending {...commonProps} />;
@@ -584,8 +590,8 @@ export default function Index({ canViewArchived, canManageVideos }) {
           {t('videoApproval.buttons.archive')} ({selectedRows.length})
         </Button>
       );
-    } else if (tab === 'rejected') {
-      // Rejected tab: Reset to Pending only (matching single row actions)
+    } else if (tab === 'rejected' || tab === 'failed') {
+      // Rejected/Failed tab: Reset to Pending only (matching single row actions)
       buttons.push(
         <Button
           key="reset-status"
@@ -831,7 +837,7 @@ export default function Index({ canViewArchived, canManageVideos }) {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ p: 0, backgroundColor: '#000' }}>
-          {previewUrl && isBrowserSupported && (
+          {previewUrl && isBrowserSupported && !videoError && (
             <video
               key={previewUrl}
               controls
@@ -849,12 +855,13 @@ export default function Index({ canViewArchived, canManageVideos }) {
                 console.error('Video error code:', e.target.error?.code);
                 console.error('Video error message:', e.target.error?.message);
                 console.error('Video src:', e.target.src?.substring(0, 100));
+                setVideoError(true);
               }}
             >
               {t('videoApproval.preview.unsupported') || 'Your browser does not support the video tag.'}
             </video>
           )}
-          {previewUrl && !isBrowserSupported && (
+          {previewUrl && (!isBrowserSupported || videoError) && (
             <Box sx={{ 
               display: 'flex', 
               flexDirection: 'column', 
@@ -865,12 +872,15 @@ export default function Index({ canViewArchived, canManageVideos }) {
               textAlign: 'center'
             }}>
               <WarningIcon sx={{ fontSize: 64, color: '#F59E0B', mb: 2 }} />
-              <Typography variant="h6" sx={{ color: 'white', mb: 1 }}>
-                {t('videoApproval.preview.formatNotSupported') || 'Format Not Supported for Browser Preview'}
+              <Typography variant="h6" sx={{ color: 'white', mb: 1, fontWeight: 600 }}>
+                {videoError
+                  ? t('videoApproval.preview.codecNotSupported') || 'Codec Not Supported for Browser Preview'
+                  : t('videoApproval.preview.formatNotSupported') || 'Format Not Supported for Browser Preview'}
               </Typography>
-              <Typography sx={{ color: '#9CA3AF', mb: 3, maxWidth: '500px' }}>
-                {t('videoApproval.preview.formatNotSupportedDesc') || 
-                  `The video format "${previewFormat.toUpperCase()}" cannot be played directly in the browser. Supported formats are: MP4, WebM, OGG. You can download the video or view it in Dropbox.`}
+              <Typography sx={{ color: '#9CA3AF', mb: 4, maxWidth: '400px', lineHeight: 1.6 }}>
+                {videoError
+                  ? t('videoApproval.preview.codecNotSupportedDesc') || 'This video uses an unsupported codec (like HEVC/H.265) which cannot be played directly in your browser. You can download the video or view it in Dropbox.'
+                  : t('videoApproval.preview.formatNotSupportedDesc') || 'This video format cannot be played directly in the browser. Supported formats are: MP4, WebM, OGG. You can download the video or view it in Dropbox.'}
               </Typography>
               <Typography sx={{ color: '#6B7280', fontSize: '13px', mb: 3 }}>
                 {previewFilename}

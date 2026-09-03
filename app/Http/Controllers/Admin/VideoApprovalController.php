@@ -40,7 +40,7 @@ class VideoApprovalController extends Controller
         $search = $request->get('search');
         $sort = $request->get('sort', 'newest'); // Sort order: newest or oldest
 
-        $query = Video::with(['user:id,name', 'approvedByUser:id,name', 'archivedByUser:id,name', 'embedding'])
+        $query = Video::with(['user:id,name', 'approvedByUser:id,name', 'archivedByUser:id,name', 'embedding', 'tags'])
             ->select([
                 'id',
                 'user_id',
@@ -64,6 +64,8 @@ class VideoApprovalController extends Controller
                 'identification_data',
                 'video_created_at',
                 'created_at',
+                'has_audio',
+                'processing_error',
             ]);
 
         // Apply search filter
@@ -87,9 +89,14 @@ class VideoApprovalController extends Controller
             case 'rejected':
                 $query->where('is_archived', false)->where('approval_status', 'rejected');
                 break;
+            case 'failed':
+                $query->where('is_archived', false)->where('processing_status', 'failed');
+                break;
             case 'pending':
             default:
-                $query->where('is_archived', false)->where('approval_status', 'pending');
+                $query->where('is_archived', false)
+                      ->where('approval_status', 'pending')
+                      ->where('processing_status', '!=', 'failed');
                 break;
         }
 
@@ -111,6 +118,7 @@ class VideoApprovalController extends Controller
             $video->isTagged = $video->pyannote_job_id && $video->diarization_data !== null && $video->identification_data !== null;
             $video->isTracked = $video->isTranscript && $video->isTagged && $video->onYoutube && $video->onDropbox;
             $video->hasEmbedding = $video->embedding && $video->embedding->isCompleted();
+            $video->tags_list = $video->tags ? $video->tags->pluck('tag')->toArray() : [];
 
             return $video->makeHidden([
                 'dropbox_path',
@@ -219,7 +227,9 @@ class VideoApprovalController extends Controller
         $video->approve($user->id);
 
         // Dispatch processing job if video hasn't been fully processed
-        if ($video->processing_status !== 'completed') {
+        // Skip dispatching if the video is marked as a failed video with no audio
+        $isFailedWithNoAudio = $video->processing_status === 'failed' && $video->has_audio === false;
+        if ($video->processing_status !== 'completed' && !$isFailedWithNoAudio) {
             try {
                 ProcessVideoJob::dispatch(
                     $video->user_id,
@@ -373,7 +383,9 @@ class VideoApprovalController extends Controller
             $approvedCount++;
 
             // Dispatch processing job if video hasn't been fully processed
-            if ($video->processing_status !== 'completed') {
+            // Skip dispatching if the video is marked as a failed video with no audio
+            $isFailedWithNoAudio = $video->processing_status === 'failed' && $video->has_audio === false;
+            if ($video->processing_status !== 'completed' && !$isFailedWithNoAudio) {
                 try {
                     ProcessVideoJob::dispatch(
                         $video->user_id,
@@ -535,6 +547,99 @@ class VideoApprovalController extends Controller
         return response()->json([
             'message' => "{$count} video(s) reset to pending successfully",
             'count' => $count,
+        ]);
+    }
+
+    /**
+     * Update audio status for a video
+     */
+    public function updateAudioStatus(Request $request, Video $video)
+    {
+        $user = Auth::user();
+        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+            return response()->json(['error' => 'Unauthorized.'], 403);
+        }
+
+        $request->validate([
+            'has_audio' => 'nullable|boolean',
+        ]);
+
+        $video->update([
+            'has_audio' => $request->has_audio,
+        ]);
+
+        return response()->json([
+            'message' => 'Audio status updated successfully',
+            'video' => $video->fresh(['tags']),
+        ]);
+    }
+
+    /**
+     * Get tags for a video
+     */
+    public function getTags(Request $request, Video $video)
+    {
+        $user = Auth::user();
+        if (!$user->hasAnyRole(['superAdmin', 'admin', 'manager'])) {
+            return response()->json(['error' => 'Unauthorized.'], 403);
+        }
+
+        return response()->json([
+            'tags' => $video->tags()->pluck('tag')->toArray(),
+        ]);
+    }
+
+    /**
+     * Save tags for a video
+     */
+    public function saveTags(Request $request, Video $video)
+    {
+        $user = Auth::user();
+        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+            return response()->json(['error' => 'Unauthorized.'], 403);
+        }
+
+        $request->validate([
+            'tags' => 'array',
+            'tags.*' => 'string|max:50',
+        ]);
+
+        $tags = $request->tags ?? [];
+
+        // Delete existing tags
+        $video->tags()->delete();
+
+        $tagModels = [];
+        $uniqueTags = [];
+        
+        foreach ($tags as $tagStr) {
+            $tagStr = trim($tagStr);
+            if (empty($tagStr)) continue;
+
+            $normalized = \App\Services\SearchNormalizationService::normalizeEnglishAndRoman($tagStr) ?? strtolower($tagStr);
+            
+            if (in_array($normalized, $uniqueTags)) continue;
+            
+            $uniqueTags[] = $normalized;
+            $tagModels[] = new \App\Models\VideoTag([
+                'tag' => $tagStr,
+                'normalized_tag' => $normalized,
+            ]);
+        }
+
+        if (count($tagModels) > 0) {
+            $video->tags()->saveMany($tagModels);
+        }
+
+        // Trigger a save on the video to update Typesense
+        $video->touch();
+        if ($video->shouldBeSearchable()) {
+            $video->searchable();
+        }
+
+        return response()->json([
+            'message' => 'Tags saved successfully',
+            'tags' => collect($tagModels)->pluck('tag')->toArray(),
         ]);
     }
 }

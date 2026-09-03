@@ -17,12 +17,15 @@
         "james-heinrich/getid3": "^1.9",
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.0",
+        "laravel/scout": "^11.3",
         "laravel/tinker": "^2.10.1",
         "openai-php/client": "^0.18.0",
+        "php-http/curl-client": "^2.4",
         "spatie/dropbox-api": "^1.23",
         "spatie/flysystem-dropbox": "^3.0",
         "spatie/laravel-permission": "^6.21",
-        "tightenco/ziggy": "^2.0"
+        "tightenco/ziggy": "^2.0",
+        "typesense/typesense-php": "^6.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

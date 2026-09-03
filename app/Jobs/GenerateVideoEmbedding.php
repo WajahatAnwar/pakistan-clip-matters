@@ -77,23 +77,17 @@ class GenerateVideoEmbedding implements ShouldQueue
 
         try {
             // Parse all video data
-            $identificationData = $this->parseJsonField($video->identification_data, 'identification_data', $video->id);
             $speakersData = $this->parseJsonField($video->speakers_data, 'speakers_data', $video->id);
-            $diarizationData = $this->parseJsonField($video->diarization_data, 'diarization_data', $video->id);
-
-            if (!$identificationData || empty($identificationData)) {
-                throw new \Exception("identification_data is empty or invalid");
-            }
 
             if (!$speakersData || empty($speakersData)) {
                 throw new \Exception("speakers_data is empty or invalid - no text to embed");
             }
 
-            // Merge identification_data with speakers_data to add text to segments
-            $enrichedSegments = $this->enrichSegmentsWithText($identificationData, $speakersData);
+            // Map speakers_data directly to segments
+            $enrichedSegments = $this->mapSpeakersDataToSegments($speakersData);
 
             if (empty($enrichedSegments)) {
-                throw new \Exception("No valid segments with text found after merging data");
+                throw new \Exception("No valid segments with text found after mapping data");
             }
 
             // Add segment_index to each segment for consistent point IDs across batches
@@ -154,6 +148,11 @@ class GenerateVideoEmbedding implements ShouldQueue
                     'video_summary' => $video->summary ?? '',
                     'video_summary_english' => $video->summary_english ?? '',
                     'video_summary_urdu' => $video->summary_urdu ?? '',
+                    'webhook_url' => route('api.webhooks.qdrant', [
+                        'video_id' => $video->id,
+                        'batch' => $batchNum + 1,
+                        'total' => $totalBatches
+                    ]),
                 ];
 
                 Log::info("Sending batch to Python service", [
@@ -168,7 +167,7 @@ class GenerateVideoEmbedding implements ShouldQueue
                 $maxRetries = 3;
                 for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
                     try {
-                        $response = Http::timeout(600)
+                        $response = Http::timeout(300) // Increased to 5 minutes to prevent broken pipes during heavy embedding generation
                             ->withHeaders([
                                 'X-API-Key' => $apiKey,
                                 'Content-Type' => 'application/json',
@@ -220,25 +219,19 @@ class GenerateVideoEmbedding implements ShouldQueue
                     'total_embedded_so_far' => $totalSegmentsEmbedded
                 ]);
                 
-                // Brief pause between batches to avoid overwhelming Railway
+                // Brief pause between batches to avoid overwhelming Railway ingress
                 if ($batchNum + 1 < $totalBatches) {
                     sleep(2);
                 }
             }
 
-            Log::info("All batches processed successfully", [
+            Log::info("All batches queued successfully for background processing", [
                 'video_id' => $video->id,
-                'total_segments_embedded' => $totalSegmentsEmbedded,
-                'collection' => $collectionName
+                'total_batches_queued' => $totalBatches
             ]);
 
-            // Mark embedding as completed
-            $embedding->markAsCompleted(
-                $totalSegmentsEmbedded,
-                $collectionName
-            );
-
-            Log::info("Successfully stored embeddings for video ID: " . $video->id);
+            // NOTE: We no longer mark the embedding as completed here. 
+            // The python background worker will hit the webhook to mark it completed.
 
         } catch (\Exception $e) {
             Log::error("Failed to generate embedding for video ID " . $video->id . ": " . $e->getMessage());
@@ -259,92 +252,48 @@ class GenerateVideoEmbedding implements ShouldQueue
      * This merges the speaker identification (who spoke when) with the actual text content
      * by matching time ranges
      */
-    private function enrichSegmentsWithText($identificationSegments, $speakersData)
+    /**
+     * Map speakers_data directly to Qdrant segments
+     */
+    private function mapSpeakersDataToSegments($speakersData)
     {
-        $enriched = [];
+        $segments = [];
 
-        // Auto-detect if speakers_data timestamps are in milliseconds or seconds
-        // by comparing against the identification_data time range
-        $speakerTimeUnit = 1; // default: no conversion (already in seconds)
-        if (!empty($speakersData) && !empty($identificationSegments)) {
-            // Find the max end time in identification_data (which is always in seconds)
-            $maxIdentEnd = 0;
-            foreach ($identificationSegments as $seg) {
-                $segEnd = $seg['end'] ?? 0;
-                if ($segEnd > $maxIdentEnd) {
-                    $maxIdentEnd = $segEnd;
-                }
+        foreach ($speakersData as $utterance) {
+            // Check if timestamps are in milliseconds or seconds.
+            // AssemblyAI usually returns milliseconds.
+            $start = isset($utterance['start']) ? $utterance['start'] : 0;
+            $end = isset($utterance['end']) ? $utterance['end'] : 0;
+            
+            // Convert to seconds if > 10000
+            if ($end > 10000) {
+                $start = $start / 1000;
+                $end = $end / 1000;
             }
 
-            // Find the max end time in speakers_data
-            $maxSpeakerEnd = 0;
-            foreach ($speakersData as $seg) {
-                $segEnd = $seg['end'] ?? 0;
-                if ($segEnd > $maxSpeakerEnd) {
-                    $maxSpeakerEnd = $segEnd;
-                }
-            }
-
-            // If speakers_data max end is more than 3x the identification max end,
-            // it's almost certainly in milliseconds (e.g., 755572ms vs 755.5s)
-            // Also check absolute threshold for safety: if max speaker end > 1000
-            // and identification data is < 1000, convert
-            if ($maxIdentEnd > 0 && $maxSpeakerEnd > ($maxIdentEnd * 3)) {
-                $speakerTimeUnit = 1000; // Convert ms to seconds
-                Log::info("Detected speakers_data timestamps in milliseconds (speaker max: {$maxSpeakerEnd}, ident max: {$maxIdentEnd}), converting to seconds");
-            } elseif ($maxSpeakerEnd > 10000) {
-                // Fallback: if absolute value > 10000, likely milliseconds
-                $speakerTimeUnit = 1000;
-                Log::info("Detected speakers_data timestamps in milliseconds (absolute: {$maxSpeakerEnd} > 10000), converting to seconds");
-            } else {
-                Log::info("Detected speakers_data timestamps in seconds (speaker max: {$maxSpeakerEnd}, ident max: {$maxIdentEnd}), no conversion needed");
-            }
-        }
-
-        foreach ($identificationSegments as $identSegment) {
-            $start = $identSegment['start'] ?? 0;
-            $end = $identSegment['end'] ?? 0;
-
-            // Skip zero-length segments
-            if ($end <= $start) {
+            $text = trim($utterance['text'] ?? '');
+            
+            if (empty($text)) {
                 continue;
             }
 
-            // Find matching speaker data by time overlap
-            $matchingTexts = [];
+            // Figure out the speaker name from actualSpeaker or speaker label
+            $speakerName = $utterance['actualSpeaker'] ?? $utterance['speaker'] ?? 'Unknown Speaker';
 
-            foreach ($speakersData as $speakerSegment) {
-                $speakerStart = isset($speakerSegment['start']) ? $speakerSegment['start'] / $speakerTimeUnit : 0;
-                $speakerEnd = isset($speakerSegment['end']) ? $speakerSegment['end'] / $speakerTimeUnit : 0;
-
-                // Check if there's time overlap
-                if ($this->hasTimeOverlap($start, $end, $speakerStart, $speakerEnd)) {
-                    $text = $speakerSegment['text'] ?? '';
-                    if (!empty(trim($text))) {
-                        $matchingTexts[] = trim($text);
-                    }
-                }
-            }
-
-            // Combine all matching text, deduplicating
-            $uniqueTexts = array_unique($matchingTexts);
-            $combinedText = implode(' ', $uniqueTexts);
-
-            // Only include segments with actual text content
-            if (!empty(trim($combinedText))) {
-                $enriched[] = array_merge($identSegment, [
-                    'text' => trim($combinedText)
-                ]);
-            }
+            $segments[] = [
+                'start' => $start,
+                'end' => $end,
+                'speaker' => $speakerName,
+                'text' => $text,
+            ];
         }
 
-        Log::info("Segment enrichment complete", [
-            'input_segments' => count($identificationSegments),
-            'enriched_with_text' => count($enriched),
-            'skipped' => count($identificationSegments) - count($enriched)
+        Log::info("Mapped speakers_data to segments", [
+            'input_segments' => count($speakersData),
+            'mapped_segments' => count($segments)
         ]);
 
-        return $enriched;
+        return $segments;
     }
 
     /**

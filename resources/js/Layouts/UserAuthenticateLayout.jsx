@@ -33,10 +33,8 @@ export default function UserAuthenticateLayout({ children }) {
   const [isHafizNaeemOnly, setIsHafizNaeemOnly] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Search mode: 'semantic' (AI/vector) or 'simple' (structured filters)
-  const [searchMode, setSearchMode] = useState('semantic');
-  // Active filter type for simple mode (only one at a time)
-  const [activeFilterType, setActiveFilterType] = useState(null);
+  // Search type: smart, speaker, title, date, language, transcript, summary
+  const [selectedSearchType, setSelectedSearchType] = useState('smart');
 
   // Date filter states
   const [dateFilterType, setDateFilterType] = useState('none');
@@ -49,6 +47,7 @@ export default function UserAuthenticateLayout({ children }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsTimerRef = useRef(null);
+  const suggestionsAbortControllerRef = useRef(null);
   const layoutSearchBoxRef = useRef(null);
   const suggestionSelectedRef = useRef(false);
 
@@ -62,6 +61,10 @@ export default function UserAuthenticateLayout({ children }) {
   // Fetch video filename suggestions as user types
   useEffect(() => {
     if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+    if (suggestionsAbortControllerRef.current) {
+      suggestionsAbortControllerRef.current.abort();
+      suggestionsAbortControllerRef.current = null;
+    }
 
     // Skip fetch when text was programmatically set from a suggestion click
     if (suggestionSelectedRef.current) {
@@ -69,25 +72,43 @@ export default function UserAuthenticateLayout({ children }) {
       return;
     }
 
-    if (!searchText.trim() || searchText.trim().length < 1) {
+    if (!searchText.trim() || searchText.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
 
     suggestionsTimerRef.current = setTimeout(async () => {
+      const suggestionController = new AbortController();
+      suggestionsAbortControllerRef.current = suggestionController;
       try {
-        const res = await fetch(route('user.video.suggestions') + '?q=' + encodeURIComponent(searchText.trim()));
+        const res = await fetch('/api/search/suggestions?q=' + encodeURIComponent(searchText.trim()), {
+          signal: suggestionController.signal,
+        });
         if (res.ok) {
-          const data = await res.json();
+          const jsonResponse = await res.json();
+          // The new API returns { success: true, data: [...] }
+          const data = jsonResponse.data || [];
           setSuggestions(data);
           setShowSuggestions(data.length > 0);
         }
-      } catch { /* ignore */ }
-    }, 300);
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.warn('Autocomplete request failed:', error);
+        }
+      } finally {
+        if (suggestionsAbortControllerRef.current === suggestionController) {
+          suggestionsAbortControllerRef.current = null;
+        }
+      }
+    }, 500);
 
     return () => {
       if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+      if (suggestionsAbortControllerRef.current) {
+        suggestionsAbortControllerRef.current.abort();
+        suggestionsAbortControllerRef.current = null;
+      }
     };
   }, [searchText]);
 
@@ -133,15 +154,15 @@ export default function UserAuthenticateLayout({ children }) {
       abortControllerRef.current = null;
       setIsSearching(false);
     }
-  }, [searchText, searchMode, activeFilterType, dateFilterType, selectedDate, selectedLanguage]);
+  }, [searchText, selectedSearchType, dateFilterType, selectedDate, selectedLanguage]);
 
-  // Disable Hafiz Naeem toggle when switching to simple mode with active filter
+  // Disable Hafiz Naeem toggle when selecting a filter other than smart
   useEffect(() => {
-    if (searchMode === 'simple' && activeFilterType && isHafizNaeemOnly) {
+    if (selectedSearchType !== 'smart' && isHafizNaeemOnly) {
       console.log('🔄 Auto-disabling Hafiz Naeem toggle - simple mode active');
       setIsHafizNaeemOnly(false);
     }
-  }, [searchMode, activeFilterType]);
+  }, [selectedSearchType]);
 
   // Sync search mode with current page props (e.g. after SearchPage navigates here)
   // NOTE: We intentionally do NOT sync pageQuery into the search bar — the layout
@@ -153,16 +174,13 @@ export default function UserAuthenticateLayout({ children }) {
     // Sync search mode only when page explicitly provides it
     if (pageSearchMode) {
       if (pageSearchMode === 'search' || pageSearchMode === 'semantic') {
-        setSearchMode('semantic');
-        setActiveFilterType(null);
+        setSelectedSearchType('smart');
       } else if (pageSearchMode === 'speaker') {
-        setSearchMode('semantic');
-        setActiveFilterType(null);
+        setSelectedSearchType('smart');
         setIsHafizNaeemOnly(true);
       } else if (pageSearchMode.startsWith('simple_')) {
         const filterType = pageSearchMode.replace('simple_', '');
-        setSearchMode('simple');
-        setActiveFilterType(filterType || null);
+        setSelectedSearchType(filterType === 'text' ? 'transcript' : (filterType || 'smart'));
         setIsHafizNaeemOnly(false);
       }
     }
@@ -232,7 +250,7 @@ export default function UserAuthenticateLayout({ children }) {
 
   // Memoize the fetch function — unified search that combines semantic + keyword + exact match
   const fetchSearchResults = useCallback(async (signal, query, speakerFilterActive) => {
-    console.log('🔍 Starting search with:', { query, speakerFilterActive, searchMode, activeFilterType, dateFilterType, selectedDate });
+    console.log('🔍 Starting search with:', { query, speakerFilterActive, selectedSearchType, dateFilterType, selectedDate });
 
     try {
       let requestBody = {
@@ -242,6 +260,7 @@ export default function UserAuthenticateLayout({ children }) {
         per_page: 10,
         use_incremental: true, // Enable cursor-based incremental pagination
         batch_size: 10, // Request 10 videos per batch for consistent pagination
+        search_type: selectedSearchType,
       };
 
       // Helper: split query into clean words (used by both semantic and speaker search)
@@ -273,23 +292,8 @@ export default function UserAuthenticateLayout({ children }) {
       };
 
       // ── HAFIZ NAEEM SPEAKER SEARCH (priority — works in any mode) ──
-      // FIXED: When custom query is provided with toggle, ONLY search the query
-      // Don't add speaker filter - let user search any content with their custom query
       if (speakerFilterActive) {
-        requestBody.search_mode = 'semantic';
-
-        // Add date filter if applicable
-        if (dateFilterType !== 'none' && selectedDate) {
-          const date = dayjs(selectedDate);
-          if (dateFilterType === 'year') {
-            requestBody.filter_year = date.year();
-          } else if (dateFilterType === 'month') {
-            requestBody.filter_year = date.year();
-            requestBody.filter_month = date.month() + 1;
-          } else if (dateFilterType === 'date') {
-            requestBody.filter_date = date.format('YYYY-MM-DD');
-          }
-        }
+        requestBody.search_type = 'smart'; // Forces semantic mode for Hafiz Naeem
 
         // CRITICAL FIX: Only send query/words, NOT speaker filter
         // This allows users to search any content when toggle is active
@@ -298,56 +302,31 @@ export default function UserAuthenticateLayout({ children }) {
           requestBody.words = splitToCleanWords(query, 2);
         } else {
           // No custom query - default to searching for Hafiz Naeem speaker segments
-          requestBody.speaker = "Hafiz Naeem Ur Rehman";
-        }
-      // ── SIMPLE MODE ──
-      } else if (searchMode === 'simple' && activeFilterType) {
-        requestBody.search_mode = 'simple';
-        requestBody.filter_type = activeFilterType;
-
-        if (activeFilterType === 'date') {
-          if (dateFilterType !== 'none' && selectedDate) {
-            const date = dayjs(selectedDate);
-            if (dateFilterType === 'year') requestBody.filter_year = date.year();
-            else if (dateFilterType === 'month') {
-              requestBody.filter_year = date.year();
-              requestBody.filter_month = date.month() + 1;
-            } else if (dateFilterType === 'date') {
-              requestBody.filter_date = date.format('YYYY-MM-DD');
-            }
-          }
-        } else if (activeFilterType === 'speaker') {
-          requestBody.speaker = query || '';
-        } else if (activeFilterType === 'title') {
-          requestBody.title = query || '';
-        } else if (activeFilterType === 'summary') {
-          requestBody.query = query || '';
-        } else if (activeFilterType === 'language') {
-          requestBody.language = selectedLanguage || '';
-          requestBody.query = query || '';
-        } else if (activeFilterType === 'text') {
-          requestBody.query = query || '';
+          requestBody.search_type = 'speaker';
+          requestBody.query = "Hafiz Naeem Ur Rehman";
         }
       } else {
-        // ── SEMANTIC MODE (default) ──
-        requestBody.search_mode = 'semantic';
-
-        // Add date filter if applicable
-        if (dateFilterType !== 'none' && selectedDate) {
-          const date = dayjs(selectedDate);
-          if (dateFilterType === 'year') {
-            requestBody.filter_year = date.year();
-          } else if (dateFilterType === 'month') {
-            requestBody.filter_year = date.year();
-            requestBody.filter_month = date.month() + 1;
-          } else if (dateFilterType === 'date') {
-            requestBody.filter_date = date.format('YYYY-MM-DD');
-          }
-        }
-
+        // ── REGULAR SEARCH ──
         if (query) {
           requestBody.query = query;
           requestBody.words = splitToCleanWords(query, 2);
+        }
+        
+        if (selectedSearchType === 'language') {
+          requestBody.language = selectedLanguage || '';
+        }
+      }
+
+      // Add date filter if applicable
+      if (dateFilterType !== 'none' && selectedDate) {
+        const date = dayjs(selectedDate);
+        if (dateFilterType === 'year') {
+          requestBody.filter_year = date.year();
+        } else if (dateFilterType === 'month') {
+          requestBody.filter_year = date.year();
+          requestBody.filter_month = date.month() + 1;
+        } else if (dateFilterType === 'date') {
+          requestBody.filter_date = date.format('YYYY-MM-DD');
         }
       }
 
@@ -389,6 +368,8 @@ export default function UserAuthenticateLayout({ children }) {
           errorMessage = 'Authentication failed. Please refresh and try again.';
         } else if (data.status_code === 429 || response.status === 429) {
           errorMessage = 'Too many searches. Please wait a moment and try again.';
+        } else if (response.status === 524 || response.status === 504) {
+          errorMessage = 'Search timed out. Please retry; your previous results have not changed.';
         } else if (data?.errors?.query?.[0]) {
           errorMessage = data.errors.query[0];
         } else if (data.message) {
@@ -419,7 +400,7 @@ export default function UserAuthenticateLayout({ children }) {
           videos: [],
           query: query,
           searchMode: data.search_mode === 'simple'
-            ? `simple_${activeFilterType || 'unknown'}`
+            ? `simple_${data.filter_type || 'unknown'}`
             : (speakerFilterActive ? 'speaker' : 'semantic'),
           totalVideos: 0,
           totalSegments: 0,
@@ -449,7 +430,7 @@ export default function UserAuthenticateLayout({ children }) {
           videos: data.grouped_by_video,
           query: query,
           searchMode: data.search_mode === 'simple'
-            ? `simple_${activeFilterType || 'unknown'}`
+            ? `simple_${data.filter_type || 'unknown'}`
             : (speakerFilterActive ? 'speaker' : 'semantic'),
           totalVideos: data.total_videos,
           totalSegments: data.total_segments,
@@ -510,7 +491,7 @@ export default function UserAuthenticateLayout({ children }) {
     } finally {
       console.log('🏁 Search cleanup complete');
     }
-  }, [searchMode, activeFilterType, dateFilterType, selectedDate, selectedLanguage]);
+  }, [selectedSearchType, dateFilterType, selectedDate, selectedLanguage]);
 
   const handleDateFilterChange = (newType) => {
     setDateFilterType(newType);
@@ -534,14 +515,11 @@ export default function UserAuthenticateLayout({ children }) {
       }
     }
 
-    if (searchMode === 'simple') {
-      if (!activeFilterType) return false;
-      if (activeFilterType === 'date') return hasDateFilter;
-      if (activeFilterType === 'language') return selectedLanguage !== '';
-      return trimmedSearch.length >= 1;
-    }
+    if (selectedSearchType === 'date') return hasDateFilter;
+    if (selectedSearchType === 'language') return selectedLanguage !== '';
+    if (selectedSearchType !== 'smart') return trimmedSearch.length >= 1;
 
-    // Semantic mode
+    // smart mode
     return (trimmedSearch.length >= 2) || hasDateFilter;
   };
 
@@ -741,15 +719,13 @@ export default function UserAuthenticateLayout({ children }) {
                 onChange={e => setSearchText(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder={
-                  searchMode === 'simple'
-                    ? (activeFilterType === 'speaker' ? (t('searchPage.searchBySpeaker') || 'Speaker name...')
-                      : activeFilterType === 'title' ? 'Video title...'
-                        : activeFilterType === 'language' ? (t('searchPage.selectLanguage') || 'Select language below...')
-                          : activeFilterType === 'summary' ? 'Summary keywords...'
-                            : activeFilterType === 'text' ? 'Search transcript text...'
-                              : activeFilterType === 'date' ? 'Optional text...'
-                                : 'Select filter...')
-                    : (isHafizNaeemOnly ? t('searchPage.searchBySpeaker') : t('searchPage.searchByMeaning'))
+                  selectedSearchType === 'speaker' ? (t('searchPage.searchBySpeaker') || 'Speaker name...')
+                  : selectedSearchType === 'title' ? 'Video title...'
+                  : selectedSearchType === 'language' ? (t('searchPage.selectLanguage') || 'Select language below...')
+                  : selectedSearchType === 'summary' ? 'Summary keywords...'
+                  : selectedSearchType === 'transcript' ? 'Search transcript text...'
+                  : selectedSearchType === 'date' ? 'Optional text...'
+                  : (isHafizNaeemOnly ? t('searchPage.searchBySpeaker') : t('searchPage.searchByMeaning'))
                 }
                 variant="outlined"
                 size="small"
@@ -840,14 +816,25 @@ export default function UserAuthenticateLayout({ children }) {
                     }}
                   >
                     <List dense disablePadding>
-                      {suggestions.map((video) => (
+                      {suggestions.map((item) => (
                         <ListItemButton
-                          key={video.id}
+                          key={item.id}
                           onClick={() => {
                             suggestionSelectedRef.current = true;
-                            setSearchText(video.title || video.filename);
+                            setSearchText(item.phrase);
                             setSuggestions([]);
                             setShowSuggestions(false);
+                            
+                            // Immediately trigger search
+                            if (abortControllerRef.current) {
+                              abortControllerRef.current.abort();
+                            }
+                            const abortController = new AbortController();
+                            abortControllerRef.current = abortController;
+                            intentionalSearchRef.current = true;
+                            setIsHafizNaeemOnly(false);
+                            setIsSearching(true);
+                            fetchSearchResults(abortController.signal, item.phrase, false);
                           }}
                           sx={{
                             px: 2,
@@ -856,12 +843,10 @@ export default function UserAuthenticateLayout({ children }) {
                             borderBottom: '1px solid rgba(255,255,255,0.05)',
                           }}
                         >
-                          <VideoFileIcon sx={{ color: '#EE1D52', mr: 1.5, fontSize: 18 }} />
+                          <SearchIcon sx={{ color: 'rgba(255,255,255,0.5)', mr: 1.5, fontSize: 18 }} />
                           <ListItemText
-                            primary={video.title || video.filename}
-                            secondary={video.title ? video.filename : null}
+                            primary={item.phrase}
                             primaryTypographyProps={{ sx: { color: 'white', fontSize: '0.8rem' } }}
-                            secondaryTypographyProps={{ sx: { color: 'rgba(255,255,255,0.5)', fontSize: '0.7rem' } }}
                           />
                         </ListItemButton>
                       ))}
@@ -870,54 +855,51 @@ export default function UserAuthenticateLayout({ children }) {
                 )}
               </Box>
 
-              {/* Search Mode Toggle — compact for header */}
-              <ToggleButtonGroup
-                value={searchMode}
-                exclusive
-                onChange={(e, newMode) => {
-                  if (newMode) {
-                    setSearchMode(newMode);
-                    if (newMode === 'semantic') {
-                      setActiveFilterType(null);
+              {/* Search Type Selector — compact for header */}
+              <FormControl size="small" sx={{ minWidth: { xs: 90, sm: 110 }, height: { xs: 36, sm: 40 } }}>
+                <Select
+                  value={selectedSearchType}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedSearchType(val);
+                    
+                    // Handle date specific resets
+                    if (val === 'date') {
+                      setDateFilterType('year');
                     } else {
-                      setIsHafizNaeemOnly(false);
+                      setDateFilterType('none');
+                      setSelectedDate(null);
                     }
-                  }
-                }}
-                size="small"
-                sx={{
-                  bgcolor: '#374151',
-                  borderRadius: '12px',
-                  border: 'none',
-                  height: { xs: 36, sm: 40 },
-                  flexShrink: 0,
-                  '& .MuiToggleButton-root': {
-                    border: 'none',
-                    borderRadius: '12px !important',
-                    color: 'rgba(255,255,255,0.5)',
-                    textTransform: 'none',
-                    px: { xs: 1, sm: 1.5 },
-                    py: 0,
-                    fontSize: { xs: '0.65rem', sm: '0.7rem' },
-                    fontWeight: 500,
-                    minWidth: 'auto',
-                    '&.Mui-selected': {
-                      bgcolor: '#EE1D52 !important',
-                      color: 'white !important',
-                      fontWeight: 600,
-                    },
-                  }
-                }}
-              >
-                <ToggleButton value="semantic">
-                  <PsychologyIcon sx={{ fontSize: 14, mr: 0.5 }} />
-                  AI
-                </ToggleButton>
-                <ToggleButton value="simple">
-                  <TuneIcon sx={{ fontSize: 14, mr: 0.5 }} />
-                  {t('searchPage.simple')}
-                </ToggleButton>
-              </ToggleButtonGroup>
+                    
+                    // Handle language specific resets
+                    if (val === 'language') {
+                      setSelectedLanguage('');
+                      setSearchText('');
+                    } else {
+                      setSelectedLanguage('');
+                    }
+                  }}
+                  displayEmpty
+                  sx={{
+                    bgcolor: '#374151',
+                    color: 'white',
+                    borderRadius: '12px',
+                    fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                    height: '100%',
+                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                    '& .MuiSvgIcon-root': { color: 'white', fontSize: { xs: '0.9rem', sm: '1rem' } },
+                    '&:hover': { bgcolor: '#4B5563' }
+                  }}
+                >
+                  <MenuItem value="smart" sx={{ fontSize: '0.75rem' }}>🧠 AI Smart Search</MenuItem>
+                  <MenuItem value="speaker" sx={{ fontSize: '0.75rem' }}>🎤 Search by Speaker</MenuItem>
+                  <MenuItem value="title" sx={{ fontSize: '0.75rem' }}>📝 Search by Title</MenuItem>
+                  <MenuItem value="date" sx={{ fontSize: '0.75rem' }}>📅 Search by Date</MenuItem>
+                  <MenuItem value="language" sx={{ fontSize: '0.75rem' }}>🌐 Search by Language</MenuItem>
+                  <MenuItem value="summary" sx={{ fontSize: '0.75rem' }}>📄 Search in Summary</MenuItem>
+                  <MenuItem value="transcript" sx={{ fontSize: '0.75rem' }}>🔤 Search in Transcript</MenuItem>
+                </Select>
+              </FormControl>
 
               {/* Search Button */}
               <IconButton
@@ -965,51 +947,10 @@ export default function UserAuthenticateLayout({ children }) {
                 gap: 1,
                 flexShrink: 0
               }}>
-                {/* Simple Mode: Filter Type Selector - Desktop */}
-                {searchMode === 'simple' && (
-                  <FormControl size="small" sx={{ minWidth: 110 }}>
-                    <Select
-                      value={activeFilterType || ''}
-                      onChange={(e) => {
-                        const val = e.target.value || null;
-                        setActiveFilterType(val);
-                        if (val === 'date') {
-                          setDateFilterType('year');
-                        } else {
-                          setDateFilterType('none');
-                          setSelectedDate(null);
-                        }
-                        if (val === 'language') {
-                          setSelectedLanguage('');
-                        } else if (val !== 'language') {
-                          setSelectedLanguage('');
-                        }
-                      }}
-                      displayEmpty
-                      sx={{
-                        bgcolor: '#374151',
-                        color: 'white',
-                        borderRadius: '12px',
-                        fontSize: '0.7rem',
-                        height: 28,
-                        '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                        '& .MuiSvgIcon-root': { color: 'white', fontSize: '1rem' },
-                        '&:hover': { bgcolor: '#4B5563' }
-                      }}
-                    >
-                      <MenuItem value="" sx={{ fontSize: '0.75rem' }}>Filter by...</MenuItem>
-                      <MenuItem value="speaker" sx={{ fontSize: '0.75rem' }}>🎤 Speaker</MenuItem>
-                      <MenuItem value="title" sx={{ fontSize: '0.75rem' }}>📝 Title</MenuItem>
-                      <MenuItem value="date" sx={{ fontSize: '0.75rem' }}>📅 Date</MenuItem>
-                      <MenuItem value="language" sx={{ fontSize: '0.75rem' }}>🌐 Language</MenuItem>
-                      <MenuItem value="summary" sx={{ fontSize: '0.75rem' }}>📄 Summary</MenuItem>
-                      <MenuItem value="text" sx={{ fontSize: '0.75rem' }}>🔤 Text</MenuItem>
-                    </Select>
-                  </FormControl>
-                )}
+                {/* Desktop Controls removed as they are unified in the Select dropdown */}
 
                 {/* Language Filter — Desktop (shown only when language filter is active) */}
-                {searchMode === 'simple' && activeFilterType === 'language' && (
+                {selectedSearchType === 'language' && (
                   <FormControl size="small" sx={{ minWidth: 140 }}>
                     <Select
                       value={selectedLanguage}
@@ -1038,8 +979,8 @@ export default function UserAuthenticateLayout({ children }) {
                   </FormControl>
                 )}
 
-                {/* Hafiz Naeem Avatar — shown in semantic mode, HIDDEN in simple mode with active filter */}
-                {!(searchMode === 'simple' && activeFilterType) && (
+                {/* Hafiz Naeem Avatar — shown in smart mode, HIDDEN in other modes */}
+                {selectedSearchType === 'smart' && (
                   <Tooltip
                     title={isHafizNaeemOnly ? t('searchPage.hafizNaeemActive') || 'Searching Hafiz Naeem - Click to disable' : t('searchPage.hafizNaeemInactive') || 'Click to search Hafiz Naeem only'}
                     arrow
@@ -1071,7 +1012,7 @@ export default function UserAuthenticateLayout({ children }) {
                             setSearchText('');
                           }
                         }}
-                        disabled={isSearching || (searchMode === 'simple' && activeFilterType)}
+                        disabled={isSearching || selectedSearchType !== 'smart'}
                       sx={{
                         p: 0,
                         transition: 'all 0.3s ease',
@@ -1120,7 +1061,7 @@ export default function UserAuthenticateLayout({ children }) {
                 )}
 
                 {/* Date Filter - Desktop — shown in semantic mode or when simple+date filter */}
-                {(searchMode === 'semantic' || activeFilterType === 'date') && (
+                {(selectedSearchType === 'smart' || selectedSearchType === 'date') && (
                   <>
                     <FormControl size="small" sx={{ minWidth: 110 }}>
                       <Select
@@ -1138,7 +1079,7 @@ export default function UserAuthenticateLayout({ children }) {
                           '&:hover': { bgcolor: '#4B5563' }
                         }}
                       >
-                        {searchMode === 'semantic' && <MenuItem value="none" sx={{ fontSize: '0.75rem' }}>No Date</MenuItem>}
+                        {selectedSearchType === 'smart' && <MenuItem value="none" sx={{ fontSize: '0.75rem' }}>No Date</MenuItem>}
                         <MenuItem value="year" sx={{ fontSize: '0.75rem' }}>By Year</MenuItem>
                         <MenuItem value="month" sx={{ fontSize: '0.75rem' }}>By Month</MenuItem>
                         <MenuItem value="date" sx={{ fontSize: '0.75rem' }}>By Date</MenuItem>
@@ -1219,51 +1160,10 @@ export default function UserAuthenticateLayout({ children }) {
               gap: { xs: 0.75, sm: 1 },
               flexWrap: 'wrap'
             }}>
-              {/* Simple Mode: Filter Type Selector - Mobile */}
-              {searchMode === 'simple' && (
-                <FormControl size="small" sx={{ minWidth: { xs: 95, sm: 110 } }}>
-                  <Select
-                    value={activeFilterType || ''}
-                    onChange={(e) => {
-                      const val = e.target.value || null;
-                      setActiveFilterType(val);
-                      if (val === 'date') {
-                        setDateFilterType('year');
-                      } else {
-                        setDateFilterType('none');
-                        setSelectedDate(null);
-                      }
-                      if (val === 'language') {
-                        setSelectedLanguage('');
-                      } else if (val !== 'language') {
-                        setSelectedLanguage('');
-                      }
-                    }}
-                    displayEmpty
-                    sx={{
-                      bgcolor: '#374151',
-                      color: 'white',
-                      borderRadius: '12px',
-                      fontSize: { xs: '0.65rem', sm: '0.7rem' },
-                      height: { xs: 26, sm: 28 },
-                      '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                      '& .MuiSvgIcon-root': { color: 'white', fontSize: { xs: '0.9rem', sm: '1rem' } },
-                      '&:hover': { bgcolor: '#4B5563' }
-                    }}
-                  >
-                    <MenuItem value="" sx={{ fontSize: '0.75rem' }}>Filter by...</MenuItem>
-                    <MenuItem value="speaker" sx={{ fontSize: '0.75rem' }}>🎤 Speaker</MenuItem>
-                    <MenuItem value="title" sx={{ fontSize: '0.75rem' }}>📝 Title</MenuItem>
-                    <MenuItem value="date" sx={{ fontSize: '0.75rem' }}>📅 Date</MenuItem>
-                    <MenuItem value="language" sx={{ fontSize: '0.75rem' }}>🌐 Language</MenuItem>
-                    <MenuItem value="summary" sx={{ fontSize: '0.75rem' }}>📄 Summary</MenuItem>
-                    <MenuItem value="text" sx={{ fontSize: '0.75rem' }}>🔤 Text</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
+              {/* Simple Mode Filter Type Selector removed as it is unified in the header Select */}
 
               {/* Language Filter — Mobile (shown only when language filter is active) */}
-              {searchMode === 'simple' && activeFilterType === 'language' && (
+              {selectedSearchType === 'language' && (
                 <FormControl size="small" sx={{ minWidth: { xs: 120, sm: 140 } }}>
                   <Select
                     value={selectedLanguage}
@@ -1372,7 +1272,7 @@ export default function UserAuthenticateLayout({ children }) {
               </Tooltip>
 
               {/* Date Filter - Mobile — shown in semantic mode or when simple+date filter */}
-              {(searchMode === 'semantic' || activeFilterType === 'date') && (
+              {(selectedSearchType === 'smart' || selectedSearchType === 'date') && (
                 <>
                   <FormControl size="small" sx={{ minWidth: { xs: 95, sm: 110 } }}>
                     <Select
@@ -1390,7 +1290,7 @@ export default function UserAuthenticateLayout({ children }) {
                         '&:hover': { bgcolor: '#4B5563' }
                       }}
                     >
-                      <MenuItem value="none" sx={{ fontSize: '0.75rem' }}>No Date</MenuItem>
+                      {selectedSearchType === 'smart' && <MenuItem value="none" sx={{ fontSize: '0.75rem' }}>No Date</MenuItem>}
                       <MenuItem value="year" sx={{ fontSize: '0.75rem' }}>By Year</MenuItem>
                       <MenuItem value="month" sx={{ fontSize: '0.75rem' }}>By Month</MenuItem>
                       <MenuItem value="date" sx={{ fontSize: '0.75rem' }}>By Date</MenuItem>

@@ -74,6 +74,52 @@ export default function index() {
   const [alternativeLanguage, setAlternativeLanguage] = useState('');
   const [showAlternativeTranscript, setShowAlternativeTranscript] = useState(false); // Toggle between primary and alternative
 
+  // Search query from session storage
+  const [searchQuery, setSearchQuery] = useState('');
+  useEffect(() => {
+    const query = sessionStorage.getItem('searchQuery');
+    if (query) {
+      setSearchQuery(query);
+    }
+  }, []);
+
+  // Highlight matching query words in text
+  const highlightText = (text, searchQuery) => {
+    if (!text || !searchQuery) return text;
+    // Split query into individual words, filter out short/common words
+    const words = searchQuery
+      .split(/\s+/)
+      .map(w => w.trim())
+      .filter(w => w.length >= 2);
+    if (words.length === 0) return text;
+    // Build regex that matches any of the query words (case-insensitive)
+    const escaped = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+    const parts = text.split(pattern);
+    return parts.map((part, i) =>
+      pattern.test(part)
+        ? <span key={i} style={{ backgroundColor: 'rgba(244,63,94,0.35)', color: '#FFF', borderRadius: '2px', padding: '0 2px', fontWeight: 600 }}>{part}</span>
+        : part
+    );
+  };
+
+  // Auto-scroll to transcript segment when clip is selected
+  useEffect(() => {
+    if (selectedClip !== null && customClips[selectedClip]) {
+      const clipStart = customClips[selectedClip].start;
+      const activeTranscript = showAlternativeTranscript ? alternativeTranscript : transcript;
+      if (activeTranscript && activeTranscript.length > 0) {
+        const index = activeTranscript.findIndex(t => t.seconds >= clipStart || (clipStart >= t.start && clipStart < t.end));
+        if (index !== -1) {
+          const element = document.getElementById(`transcript-segment-${index}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      }
+    }
+  }, [selectedClip, customClips, transcript, alternativeTranscript, showAlternativeTranscript]);
+
   // Download dialog state
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
 
@@ -304,9 +350,9 @@ export default function index() {
         // Load primary transcript (speakers_data - original language)
         if (data.video.speakers_data) {
           const parsedTranscript = data.video.speakers_data.map(item => {
-            // Handle both millisecond and second formats
-            const startSec = item.start > 10000 ? item.start / 1000 : item.start;
-            const endSec = item.end > 10000 ? item.end / 1000 : item.end;
+            // Timestamps are stored in milliseconds from AssemblyAI
+            const startSec = (item.start || 0) / 1000;
+            const endSec = (item.end || 0) / 1000;
 
             return {
               time: `${formatTime(startSec)} - ${formatTime(endSec)}`,
@@ -331,8 +377,8 @@ export default function index() {
         // Load alternative transcript
         if (data.video.alternative_transcript) {
           const parsedAltTranscript = data.video.alternative_transcript.map(item => {
-            const startSec = item.start > 10000 ? item.start / 1000 : item.start;
-            const endSec = item.end > 10000 ? item.end / 1000 : item.end;
+            const startSec = (item.start || 0) / 1000;
+            const endSec = (item.end || 0) / 1000;
 
             return {
               time: `${formatTime(startSec)} - ${formatTime(endSec)}`,
@@ -394,17 +440,56 @@ export default function index() {
         console.log('Creating clips from search segments:', segmentsFromSearch);
 
         if (Array.isArray(segmentsFromSearch) && segmentsFromSearch.length > 0) {
-          const searchClips = segmentsFromSearch
+          const rawSearchClips = segmentsFromSearch
             .filter(segment => segment.start_time || segment.end_time) // Skip segments with no real time range
-            .map((segment, index) => ({
-            id: `search-${index}`,
-            start: segment.start_time,
-            end: segment.end_time,
-            thumbnail: getClipThumbnail(),
-            title: `${segment.speaker || 'Speaker'} - ${formatTime(segment.start_time)}`,
-            speaker: segment.speaker,
-            text: segment.text || segment.text_preview || ''
-          }));
+            .map((segment, index) => {
+              const originalStart = segment.start_time || 0;
+              const originalEnd = segment.end_time || (originalStart + 1);
+              
+              // Align to 15-second contextual block boundaries
+              const blockStart = Math.floor(originalStart / 15) * 15;
+              const blockEnd = Math.ceil(originalEnd / 15) * 15;
+
+              return {
+                id: `search-${index}`,
+                start: blockStart,
+                end: blockEnd,
+                thumbnail: getClipThumbnail(),
+                title: `${segment.speaker || 'Speaker'} - ${formatTime(blockStart)}`,
+                speaker: segment.speaker,
+                text: segment.text || segment.text_preview || ''
+              };
+            });
+
+          // Sort clips by start time
+          rawSearchClips.sort((a, b) => a.start - b.start);
+
+          // Merge overlapping or adjacent clips (within 5 seconds)
+          const mergedClips = [];
+          rawSearchClips.forEach(clip => {
+            if (mergedClips.length === 0) {
+              mergedClips.push(clip);
+            } else {
+              const lastClip = mergedClips[mergedClips.length - 1];
+              // If clips overlap or are adjacent (allow up to 5 seconds gap)
+              if (clip.start <= lastClip.end + 5) {
+                // Merge them: extend end time
+                lastClip.end = Math.max(lastClip.end, clip.end);
+                // Combine text if it's new
+                if (clip.text && !lastClip.text.includes(clip.text)) {
+                  lastClip.text += ' ... ' + clip.text;
+                }
+              } else {
+                mergedClips.push(clip);
+              }
+            }
+          });
+          
+          const searchClips = mergedClips;
+          // Re-assign sequential IDs
+          searchClips.forEach((clip, index) => {
+            clip.id = `search-${index}`;
+          });
 
           // Add to customClips so they display in the UI
           setCustomClips(searchClips);
@@ -646,9 +731,9 @@ export default function index() {
 
       // Parse and set transcript data (timestamps are in milliseconds from AssemblyAI)
       const parsedTranscript = transcriptData.map(item => {
-        // Handle both millisecond and second formats
-        const startSec = item.start > 10000 ? item.start / 1000 : item.start;
-        const endSec = item.end > 10000 ? item.end / 1000 : item.end;
+        // Convert ms to seconds
+        const startSec = (item.start || 0) / 1000;
+        const endSec = (item.end || 0) / 1000;
 
         return {
           time: `${formatTime(startSec)} - ${formatTime(endSec)}`, // display only
@@ -3178,6 +3263,7 @@ export default function index() {
                     return (
                       <Box
                         key={idx}
+                        id={`transcript-segment-${idx}`}
                         sx={{
                           py: 1.5,
                           px: 1.5,
@@ -3242,7 +3328,7 @@ export default function index() {
                             fontFamily: isUrduText ? '"Noori Nastaliq", "Jameel Noori Nastaliq", "Alvi Nastaliq", "Noto Nastaliq Urdu", "Urdu Typesetting", "Arabic Typesetting", sans-serif' : 'inherit',
                           }}
                         >
-                          {item.text}
+                          {highlightText(item.text, searchQuery)}
                         </Typography>
                       </Box>
                     );

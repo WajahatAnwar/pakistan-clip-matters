@@ -201,7 +201,6 @@ class ProcessVideoJob implements ShouldQueue
                 Log::warning('Failed to extract video creation date', ['error' => $e->getMessage()]);
                 // Non-fatal — continue processing
             }
-
             // ============================================
             // STEP 2: UPLOAD TO YOUTUBE (OR SKIP IF NOT CONNECTED)
             // ============================================
@@ -439,6 +438,10 @@ class ProcessVideoJob implements ShouldQueue
             $transcriptData = $assemblyService->requestTranscript($uploadUrl, [
                 'speaker_labels' => true,
                 'language_detection' => true,
+                'language_detection_options' => [
+                    'expected_languages' => ['ur', 'en'], // Force detection to pick ONLY between Urdu and English
+                    'fallback_language' => 'ur' // Default to Urdu if unsure (e.g., Arabic intro is confusing)
+                ],
                 'summarization' => true,
                 'summary_model' => 'conversational', 
                 'summary_type' => 'bullets',
@@ -472,6 +475,9 @@ class ProcessVideoJob implements ShouldQueue
 
             // Speaker information
             if (isset($finalTranscript['utterances']) && count($finalTranscript['utterances']) > 0) {
+                // Chunk long utterances into smaller pieces (e.g. max 15 seconds) to preserve accurate timestamps
+                $finalTranscript['utterances'] = $this->chunkUtterances($finalTranscript['utterances'], 15000);
+
                 $speakers = array_unique(array_column($finalTranscript['utterances'], 'speaker'));
                 $results['speakers_count'] = count($speakers);
                 $results['utterances_count'] = count($finalTranscript['utterances']);
@@ -1179,6 +1185,11 @@ class ProcessVideoJob implements ShouldQueue
             // Mark video as failed
             if (isset($video)) {
                 $video->markAsFailed($e->getMessage());
+                
+                // If AssemblyAI failed because there was no spoken audio, treat it as a video with no audio
+                if (str_contains($e->getMessage(), 'language_detection cannot be performed on files with no spoken audio')) {
+                    $video->update(['has_audio' => false]);
+                }
             }
 
             // Send failure email notification if user has enabled it
@@ -1480,6 +1491,73 @@ REFINED SEGMENTS:";
     }
 
     /**
+     * Chunk long utterances into smaller sub-utterances based on maximum duration.
+     * This prevents long continuous speeches from being grouped into massive blocks,
+     * ensuring that timestamp seeking remains accurate.
+     * 
+     * @param array $utterances Array of utterances from AssemblyAI
+     * @param int $maxDurationMs Maximum duration of an utterance in milliseconds
+     * @return array Chunked utterances
+     */
+    protected function chunkUtterances(array $utterances, int $maxDurationMs = 15000): array
+    {
+        $chunked = [];
+
+        foreach ($utterances as $utterance) {
+            // Check if utterance has words and exceeds maximum duration
+            if (isset($utterance['words']) && !empty($utterance['words']) && isset($utterance['start'], $utterance['end']) && ($utterance['end'] - $utterance['start'] > $maxDurationMs)) {
+                $currentChunk = [
+                    'speaker' => $utterance['speaker'] ?? 'A',
+                    'text' => '',
+                    'start' => null,
+                    'end' => null,
+                    'confidence' => $utterance['confidence'] ?? 0,
+                    'words' => []
+                ];
+                $wordsText = [];
+
+                foreach ($utterance['words'] as $word) {
+                    if ($currentChunk['start'] === null) {
+                        $currentChunk['start'] = $word['start'] ?? 0;
+                    }
+
+                    $wordsText[] = $word['text'] ?? '';
+                    $currentChunk['end'] = $word['end'] ?? 0;
+                    $currentChunk['words'][] = $word;
+
+                    // If the current chunk's duration reaches maxDurationMs, finalize it and start a new one
+                    if (($word['end'] - $currentChunk['start']) >= $maxDurationMs) {
+                        $currentChunk['text'] = trim(implode(' ', $wordsText));
+                        $chunked[] = $currentChunk;
+
+                        // Reset for next chunk
+                        $currentChunk = [
+                            'speaker' => $utterance['speaker'] ?? 'A',
+                            'text' => '',
+                            'start' => null,
+                            'end' => null,
+                            'confidence' => $utterance['confidence'] ?? 0,
+                            'words' => []
+                        ];
+                        $wordsText = [];
+                    }
+                }
+
+                // Add any remaining words as the final chunk
+                if (!empty($currentChunk['words'])) {
+                    $currentChunk['text'] = trim(implode(' ', $wordsText));
+                    $chunked[] = $currentChunk;
+                }
+            } else {
+                // If it's short enough or has no words, leave it as is
+                $chunked[] = $utterance;
+            }
+        }
+
+        return $chunked;
+    }
+
+    /**
      * Get human-readable language name from language code
      * 
      * @param string $code Language code (e.g., 'en', 'ur')
@@ -1519,7 +1597,7 @@ REFINED SEGMENTS:";
         $translatedUtterances = [];
         
         // Process utterances in batches to avoid token limits
-        $batchSize = 20;
+        $batchSize = 10;
         $batches = array_chunk($utterances, $batchSize);
         
         foreach ($batches as $batchIndex => $batch) {
@@ -1535,44 +1613,80 @@ REFINED SEGMENTS:";
             // Create JSON string for translation
             $jsonInput = json_encode($textsToTranslate, JSON_UNESCAPED_UNICODE);
             
-            try {
-                $response = $client->chat()->create([
-                    'model' => 'gpt-4o-mini',
-                    'messages' => [
-                        [
-                            'role' => 'system',
-                            'content' => "You are a professional translator. Translate the following JSON array of texts to {$targetLanguage}. 
-                            Return ONLY a valid JSON array with the same structure (index and text fields).
-                            Preserve the exact meaning and context of each text.
-                            Do not add any explanations or additional text outside the JSON.
-                            If the text is already in {$targetLanguage}, return it as is."
+            $maxRetries = 3;
+            $attempt = 0;
+            $success = false;
+            $translatedTexts = $textsToTranslate; // Default fallback if all retries fail
+            
+            while ($attempt < $maxRetries && !$success) {
+                $attempt++;
+                try {
+                    $response = $client->chat()->create([
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => "You are a professional translator. Translate the following JSON array of texts to {$targetLanguage}. 
+                                Return ONLY a valid JSON object with a 'translations' key containing an array of objects with the same structure (index and text fields).
+                                Preserve the exact meaning and context of each text.
+                                Do not add any explanations or additional text outside the JSON.
+                                If the text is already in {$targetLanguage}, return it as is." . 
+                                ($targetLanguage === 'English' ? " HOWEVER, if the original text contains ANY Urdu/Arabic, you MUST translate it to English. You are strictly forbidden from outputting Urdu or Arabic characters. If you see an Islamic phrase or Quranic verse, translate its meaning to English. Your output must be 100% English text." : "")
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => $jsonInput
+                            ]
                         ],
-                        [
-                            'role' => 'user',
-                            'content' => $jsonInput
-                        ]
-                    ],
-                    'max_tokens' => 4000,
-                    'temperature' => 0.3,
-                ]);
-                
-                $translatedJson = $response->choices[0]->message->content ?? '[]';
-                
-                // Clean the response (remove markdown code blocks if present)
-                $translatedJson = preg_replace('/^```json\s*|\s*```$/m', '', trim($translatedJson));
-                $translatedJson = preg_replace('/^```\s*|\s*```$/m', '', trim($translatedJson));
-                
-                $translatedTexts = json_decode($translatedJson, true);
-                
-                if (json_last_error() !== JSON_ERROR_NONE || !is_array($translatedTexts)) {
-                    Log::error("Translation JSON parse error for batch {$batchIndex}", [
-                        'target_language' => $targetLanguage,
-                        'error' => json_last_error_msg(),
-                        'raw_response' => substr($translatedJson, 0, 500)
+                        'response_format' => ['type' => 'json_object'],
+                        'max_tokens' => 4000,
+                        'temperature' => 0.3 + ($attempt * 0.2), // Increase temperature slightly on retries
                     ]);
-                    // Fall back to original texts
-                    $translatedTexts = $textsToTranslate;
+                    
+                    $translatedJson = $response->choices[0]->message->content ?? '[]';
+                    
+                    // Clean the response (remove markdown code blocks if present)
+                    $translatedJson = preg_replace('/^```json\s*|\s*```$/m', '', trim($translatedJson));
+                    $translatedJson = preg_replace('/^```\s*|\s*```$/m', '', trim($translatedJson));
+                    
+                    $decoded = json_decode($translatedJson, true);
+                    $candidateTexts = $decoded['translations'] ?? null;
+                    
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($candidateTexts)) {
+                        $hasUrdu = false;
+                        if ($targetLanguage === 'English') {
+                            foreach ($candidateTexts as &$ct) {
+                                if (isset($ct['text']) && preg_match('/[\x{0600}-\x{06FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', $ct['text'])) {
+                                    $hasUrdu = true;
+                                    // If this is the final attempt, we brute-force remove the Urdu characters
+                                    if ($attempt == $maxRetries) {
+                                        $ct['text'] = preg_replace('/[\x{0600}-\x{06FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', '', $ct['text']);
+                                        $ct['text'] = trim(preg_replace('/\s+/', ' ', $ct['text'])); // Clean up spaces
+                                        $hasUrdu = false; // We just stripped it out, so treat it as successful
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Keep the latest candidate text so we don't fall back to 100% Urdu original text
+                        $translatedTexts = $candidateTexts;
+
+                        if (!$hasUrdu) {
+                            $success = true;
+                        } else {
+                            Log::warning("Translation batch {$batchIndex} attempt {$attempt} contained Urdu. Retrying...");
+                        }
+                    } else {
+                        Log::error("Translation JSON parse error for batch {$batchIndex} attempt {$attempt}", [
+                            'target_language' => $targetLanguage,
+                            'error' => json_last_error_msg(),
+                            'raw_response' => substr($translatedJson, 0, 500)
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Translation exception for batch {$batchIndex} attempt {$attempt}: " . $e->getMessage());
                 }
+            }
                 
                 // Map translated texts back to utterances
                 $batchTranslated = [];
@@ -1620,25 +1734,6 @@ REFINED SEGMENTS:";
                 if ($batchIndex < count($batches) - 1) {
                     usleep(500000); // 0.5 second delay
                 }
-                
-            } catch (\Exception $e) {
-                Log::error("Translation batch {$batchIndex} failed", [
-                    'target_language' => $targetLanguage,
-                    'error' => $e->getMessage()
-                ]);
-                
-                // Fall back to original utterances for this batch
-                foreach ($batch as $utterance) {
-                    $translatedUtterances[] = [
-                        'speaker' => $utterance['speaker'] ?? 'A',
-                        'text' => $utterance['text'] ?? '',
-                        'start' => $utterance['start'] ?? 0,
-                        'end' => $utterance['end'] ?? 0,
-                        'confidence' => $utterance['confidence'] ?? 0,
-                        'words' => $utterance['words'] ?? [],
-                    ];
-                }
-            }
         }
         
         return $translatedUtterances;
@@ -1657,42 +1752,61 @@ REFINED SEGMENTS:";
         if (empty(trim($text))) {
             return null;
         }
-
-        try {
-            $response = $client->chat()->create([
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => "You are a professional translator. Translate the following text to {$targetLanguage}. 
-                        Preserve the exact meaning, tone, and formatting (bullet points, paragraphs, etc.).
-                        Return ONLY the translated text without any explanations or additional notes.
-                        If the text is already in {$targetLanguage}, return it as is."
+        $maxRetries = 3;
+        $attempt = 0;
+        $success = false;
+        $translatedText = $text; // Default fallback
+        
+        while ($attempt < $maxRetries && !$success) {
+            $attempt++;
+            try {
+                $response = $client->chat()->create([
+                    'model' => 'gpt-4o-mini',
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' => "You are a professional translator. Translate the following text to {$targetLanguage}. 
+                            Preserve the exact meaning and context.
+                            Do not add any explanations, just return the translated text.
+                            If the text is already in {$targetLanguage}, return it as is." . 
+                            ($targetLanguage === 'English' ? " HOWEVER, if the original text contains ANY Urdu/Arabic, you MUST translate it to English. You are strictly forbidden from outputting Urdu or Arabic characters. If you see an Islamic phrase or Quranic verse, translate its meaning to English. Your output must be 100% English text." : "")
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $this->sanitizeUtf8($text)
+                        ]
                     ],
-                    [
-                        'role' => 'user',
-                        'content' => $text
-                    ]
-                ],
-                'max_tokens' => 2000,
-                'temperature' => 0.3,
-            ]);
+                    'max_tokens' => 2000,
+                    'temperature' => 0.3 + ($attempt * 0.2),
+                ]);
+                
+                $candidateText = $response->choices[0]->message->content ?? $text;
+                
+                $hasUrdu = false;
+                if ($targetLanguage === 'English' && preg_match('/[\x{0600}-\x{06FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', $candidateText)) {
+                    $hasUrdu = true;
+                    // If final attempt, brute-force strip the characters
+                    if ($attempt == $maxRetries) {
+                        $candidateText = preg_replace('/[\x{0600}-\x{06FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', '', $candidateText);
+                        $candidateText = trim(preg_replace('/\s+/', ' ', $candidateText));
+                        $hasUrdu = false;
+                    }
+                }
+                
+                // Keep the latest text as fallback
+                $translatedText = $candidateText;
 
-            $translatedText = $response->choices[0]->message->content ?? null;
-            
-            Log::info("Text translated to {$targetLanguage}", [
-                'original_length' => strlen($text),
-                'translated_length' => $translatedText ? strlen($translatedText) : 0
-            ]);
-
-            return $translatedText;
-
-        } catch (\Exception $e) {
-            Log::error("Text translation to {$targetLanguage} failed", [
-                'error' => $e->getMessage()
-            ]);
-            return null;
+                if (!$hasUrdu) {
+                    $success = true;
+                } else {
+                    Log::warning("Text translation attempt {$attempt} contained Urdu. Retrying...");
+                }
+            } catch (\Exception $e) {
+                Log::error("Text translation exception attempt {$attempt}: " . $e->getMessage());
+            }
         }
+        
+        return $translatedText;
     }
 
     /**

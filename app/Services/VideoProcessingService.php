@@ -302,6 +302,11 @@ class VideoProcessingService
         foreach ($files as $file) {
             $fileCount++;
             if ($file->isFile()) {
+                // Skip videos from the local folder
+                if (strpos(strtolower($file->path()), '/local/') !== false) {
+                    continue;
+                }
+
                 $extension = strtolower(pathinfo($file->path(), PATHINFO_EXTENSION));
                 if (in_array($extension, $videoExtensions)) {
                     $sizeBytes = $file->size();
@@ -388,7 +393,7 @@ class VideoProcessingService
      * @param int $limit Maximum number of videos to return
      * @return \Illuminate\Database\Eloquent\Collection
      */
-    public function getUserVideos(?string $status = null, int $limit = 50)
+    public function getUserVideos(?string $status = null, int $limit = 50, array $columns = ['*'])
     {
         // Admin roles see ALL videos (shared pool)
         if ($this->user->hasAnyRole(['superAdmin', 'admin', 'manager'])) {
@@ -402,7 +407,7 @@ class VideoProcessingService
             $query->where('processing_status', $status);
         }
 
-        return $query->limit($limit)->get();
+        return $query->limit($limit)->get($columns);
     }
 
     /**

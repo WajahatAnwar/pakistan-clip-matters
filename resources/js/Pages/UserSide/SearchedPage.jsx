@@ -125,27 +125,42 @@ export default function SearchedPage() {
   const ENABLE_BACKGROUND_PREFETCH = false;
   const prefetchedDataRef = React.useRef(null);  // Store prefetched data
 
-  // Deduplicate segments within each video result by normalized text
-  // NOTE: This will be removed once backend deduplication is implemented
+  // Deduplicate segments within each video result by segment_id and time overlap
   const deduplicateSegments = (videoResults) => {
     return videoResults.map(result => {
       if (!result.segments || result.segments.length <= 1) return result;
-      const seen = new Map();
-      const uniqueSegments = [];
+      
+      // 1. Deduplicate by segment_id
+      const byId = new Map();
       for (const seg of result.segments) {
-        const key = (seg.text || '').trim().toLowerCase().replace(/\s+/g, ' ');
-        if (!key) { uniqueSegments.push(seg); continue; }
-        const existing = seen.get(key);
+        // Fallback key if segment_id is missing
+        const key = seg.segment_id || (seg.start_time + '-' + seg.end_time);
+        const existing = byId.get(key);
         if (!existing || (seg.score || 0) > (existing.score || 0)) {
-          if (existing) {
-            const idx = uniqueSegments.indexOf(existing);
-            if (idx !== -1) uniqueSegments.splice(idx, 1);
-          }
-          seen.set(key, seg);
-          uniqueSegments.push(seg);
+          byId.set(key, seg);
         }
       }
-      return { ...result, segments: uniqueSegments, match_count: uniqueSegments.length };
+      
+      // 2. Filter time overlaps
+      const sorted = Array.from(byId.values()).sort((a, b) => (a.start_time || 0) - (b.start_time || 0));
+      const finalSegments = [];
+      for (const seg of sorted) {
+        if (finalSegments.length === 0) {
+          finalSegments.push(seg);
+        } else {
+          const last = finalSegments[finalSegments.length - 1];
+          // Overlap condition: segment starts before previous segment ends
+          if ((seg.start_time || 0) < (last.end_time || 0)) {
+            if ((seg.score || 0) > (last.score || 0)) {
+              finalSegments.pop();
+              finalSegments.push(seg);
+            }
+          } else {
+            finalSegments.push(seg);
+          }
+        }
+      }
+      return { ...result, segments: finalSegments, match_count: finalSegments.length };
     });
   };
 
@@ -161,11 +176,15 @@ export default function SearchedPage() {
       return [];
     }
     const deduped = deduplicateSegments(parsed);
-    // Sort: semantic matches (with actual segments) first, then title-only cards after, both sorted by match_count desc
+    // Sort: tag matches first, then semantic matches (with actual segments), then title-only cards after, both sorted by match_count desc
     return deduped.sort((a, b) => {
-      const aIsTitle = a.is_video_only || a.match_types?.includes('title_match') || a.matched_fields?.includes('video_title') ? 1 : 0;
-      const bIsTitle = b.is_video_only || b.match_types?.includes('title_match') || b.matched_fields?.includes('video_title') ? 1 : 0;
-      if (bIsTitle !== aIsTitle) return aIsTitle - bIsTitle;
+      const aIsTagMatch = a.match_types && a.match_types.includes('tag_match') ? 1 : 0;
+      const bIsTagMatch = b.match_types && b.match_types.includes('tag_match') ? 1 : 0;
+      if (aIsTagMatch !== bIsTagMatch) return bIsTagMatch - aIsTagMatch; // tag matches to top
+
+      const aIsTitleOnly = (!a.segments || a.segments.length === 0) ? 1 : 0;
+      const bIsTitleOnly = (!b.segments || b.segments.length === 0) ? 1 : 0;
+      if (bIsTitleOnly !== aIsTitleOnly) return aIsTitleOnly - bIsTitleOnly;
       return (b.match_count || 0) - (a.match_count || 0);
     });
   }, [videos]);
@@ -682,12 +701,18 @@ export default function SearchedPage() {
   // Highlight matching query words in text
   const highlightText = (text, searchQuery) => {
     if (!text || !searchQuery) return text;
-    // Split query into individual words, filter out short/common words
+    // List of common English stop words that shouldn't be highlighted to prevent 
+    // substring matches inside larger words (like "on" inside "Conference")
+    const stopWords = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'is', 'am', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up', 'about', 'into', 'over', 'after', 'this', 'that', 'it']);
+    
+    // Split query into individual words, filter out stop words and single characters
     const words = searchQuery
       .split(/\s+/)
       .map(w => w.trim())
-      .filter(w => w.length >= 2);
+      .filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()));
+      
     if (words.length === 0) return text;
+    
     // Build regex that matches any of the query words (case-insensitive)
     const escaped = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
@@ -801,7 +826,7 @@ export default function SearchedPage() {
                   <Chip
                     label={
                       searchMode === 'semantic' || searchMode === 'search'
-                        ? `🧠 ${t('searchedPage.semantic')} ${t('searchedPage.search')}`
+                        ? `🧠 AI Smart Search`
                         : searchMode === 'speaker'
                           ? `👤 Speaker Search`
                           : searchMode?.startsWith('simple_')
@@ -822,10 +847,10 @@ export default function SearchedPage() {
                   {searchMetadata?.elastic_features && (
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                       {searchMetadata.elastic_features.fuzzy_matching && (
-                        <Chip label="🔍 Fuzzy Match" size="small" sx={{ bgcolor: '#374151', color: '#9CA3AF', fontSize: '0.7rem' }} />
+                        <Chip label="🔍 Flexible Match" size="small" sx={{ bgcolor: '#374151', color: '#9CA3AF', fontSize: '0.7rem' }} />
                       )}
                       {searchMetadata.elastic_features.typo_tolerance && (
-                        <Chip label="✨ Typo Tolerant" size="small" sx={{ bgcolor: '#374151', color: '#9CA3AF', fontSize: '0.7rem' }} />
+                        <Chip label="✨ Spelling Auto-Corrected" size="small" sx={{ bgcolor: '#374151', color: '#9CA3AF', fontSize: '0.7rem' }} />
                       )}
                     </Box>
                   )}
@@ -924,6 +949,9 @@ export default function SearchedPage() {
               sessionStorage.setItem('searchSegments', JSON.stringify(result.segments));
               console.log('✅ Stored', result.segments.length, 'segments in sessionStorage');
             }
+            if (query) {
+              sessionStorage.setItem('searchQuery', query);
+            }
             console.log('🚀 Navigating to:', route('user.video.page', { id: result.video?.id }));
             router.get(route('user.video.page', { id: result.video?.id }));
           }} sx={{
@@ -962,6 +990,9 @@ export default function SearchedPage() {
               sessionStorage.setItem('searchSegments', JSON.stringify(result.segments));
               console.log('✅ Stored', result.segments.length, 'segments');
             }
+            if (query) {
+              sessionStorage.setItem('searchQuery', query);
+            }
             console.log('🚀 Navigating to video page');
             router.get(route('user.video.page', { id: result.video?.id }));
           }} sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: { xs: 0.5, sm: 1 }, justifyContent: 'center', cursor: 'pointer' }}>
@@ -979,11 +1010,12 @@ export default function SearchedPage() {
             {result.match_types && result.match_types.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {result.match_types.filter(t => !t.startsWith('matched_in_')).map((type, i) => {
-                  const chipConfig = {
-                    'semantic': { label: 'Semantic', color: '#3B82F6', bg: 'rgba(59,130,246,0.15)' },
-                    'keyword': { label: 'Keyword', color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' },
-                    'title_match': { label: 'Title Match', color: '#22C55E', bg: 'rgba(34,197,94,0.15)' },
-                    'speaker_filter': { label: 'Speaker', color: '#A855F7', bg: 'rgba(168,85,247,0.15)' },
+                    const chipConfig = {
+                    'semantic': { label: 'AI Meaning Match', color: '#3B82F6', bg: 'rgba(59,130,246,0.15)' },
+                    'keyword': { label: 'Exact Word Match', color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' },
+                    'title_match': { label: 'Matched in Title', color: '#22C55E', bg: 'rgba(34,197,94,0.15)' },
+                    'tag_match': { label: 'TAG MATCH', color: '#22C55E', bg: 'rgba(34,197,94,0.15)' },
+                    'speaker_filter': { label: 'Speaker Match', color: '#A855F7', bg: 'rgba(168,85,247,0.15)' },
                     'llm_reranked': { label: 'AI Verified', color: '#EC4899', bg: 'rgba(236,72,153,0.15)' },
                     'simple_speaker_filter': { label: 'Speaker Filter', color: '#A855F7', bg: 'rgba(168,85,247,0.15)' },
                     'simple_title_filter': { label: 'Title Filter', color: '#22C55E', bg: 'rgba(34,197,94,0.15)' },
@@ -992,8 +1024,10 @@ export default function SearchedPage() {
                     'simple_video_filter': { label: 'Video Filter', color: '#8B5CF6', bg: 'rgba(139,92,246,0.15)' },
                     'simple_summary_filter': { label: 'Summary Filter', color: '#EC4899', bg: 'rgba(236,72,153,0.15)' },
                     'simple_text_filter': { label: 'Text Filter', color: '#F97316', bg: 'rgba(249,115,22,0.15)' },
+                    'incremental_lexical_backstop': { label: 'Deep Search', color: '#10B981', bg: 'rgba(16,185,129,0.15)' },
+                    'short_query_lexical_hit': { label: 'Exact Match', color: '#8B5CF6', bg: 'rgba(139,92,246,0.15)' },
                   };
-                  const cfg = chipConfig[type] || { label: type, color: '#9CA3AF', bg: 'rgba(156,163,175,0.15)' };
+                  const cfg = chipConfig[type] || { label: type.replace(/_/g, ' '), color: '#9CA3AF', bg: 'rgba(156,163,175,0.15)' };
                   return (
                     <Box key={i} sx={{ px: 1, py: 0.25, borderRadius: '6px', bgcolor: cfg.bg, border: `1px solid ${cfg.color}30` }}>
                       <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: cfg.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -1006,15 +1040,20 @@ export default function SearchedPage() {
                 {result.matched_fields && result.matched_fields.length > 0 && result.matched_fields.map((field, i) => {
                   const fieldLabels = {
                     'video_title': 'Matched in Title',
-                    'text': 'Matched in Text',
+                    'manual_tags': 'TAG MATCH',
+                    'text': 'Matched in Spoken Text',
                     'speaker': 'Matched Speaker',
                     'diarization_speaker': 'Matched Speaker',
-                    'semantic_vector': 'Meaning Match',
+                    'Summary_en': 'Found in English Summary',
+                    'summary_en': 'Found in English Summary',
+                    'Summary_ur': 'Found in Urdu Summary',
+                    'summary_ur': 'Found in Urdu Summary',
                   };
+                  const label = fieldLabels[field] || field.replace(/_/g, ' ');
                   return (
                     <Box key={`f-${i}`} sx={{ px: 1, py: 0.25, borderRadius: '6px', bgcolor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
                       <Typography sx={{ fontSize: '0.65rem', fontWeight: 500, color: '#D1D5DB' }}>
-                        {fieldLabels[field] || field}
+                        {label}
                       </Typography>
                     </Box>
                   );
@@ -1028,7 +1067,7 @@ export default function SearchedPage() {
         {result.is_video_only ? (
           <Box sx={{ mt: 1, px: 1.5, py: 0.75, borderRadius: 1.5, bgcolor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
             <Typography sx={{ color: '#22C55E', fontSize: '0.85rem', fontWeight: 500 }}>
-              Video title matches your search query
+              {result.match_types && result.match_types.includes('tag_match') ? 'Video tags match your search query' : 'Video title matches your search query'}
             </Typography>
           </Box>
         ) : result.segments && result.segments.length > 0 && (
@@ -1040,12 +1079,16 @@ export default function SearchedPage() {
               }).map((seg, segIdx) => {
                 // Determine match field styling
                 const matchFieldConfig = {
-                  'text': { label: '📝 Text Match', color: '#F97316', border: '#F97316' },
+                  'text': { label: '📝 Spoken Text Match', color: '#F97316', border: '#F97316' },
                   'video_title': { label: '🏷️ Title Match', color: '#22C55E', border: '#22C55E' },
                   'speaker': { label: '🎤 Speaker Match', color: '#A855F7', border: '#A855F7' },
                   'diarization_speaker': { label: '🎤 Speaker Match', color: '#A855F7', border: '#A855F7' },
-                  'semantic_vector': { label: '🧠 Meaning Match', color: '#3B82F6', border: '#3B82F6' },
+                  'semantic_vector': { label: '🧠 AI Meaning Match', color: '#3B82F6', border: '#3B82F6' },
                   'date_filter': { label: '📅 Date Filter', color: '#F59E0B', border: '#F59E0B' },
+                  'Summary_en': { label: '📑 Found in English Summary', color: '#EC4899', border: '#EC4899' },
+                  'summary_en': { label: '📑 Found in English Summary', color: '#EC4899', border: '#EC4899' },
+                  'Summary_ur': { label: '📑 Found in Urdu Summary', color: '#EC4899', border: '#EC4899' },
+                  'summary_ur': { label: '📑 Found in Urdu Summary', color: '#EC4899', border: '#EC4899' },
                 };
                 const fieldKey = seg.matched_field || (seg.match_types?.find(t => t === 'semantic') ? 'semantic_vector' : 'text');
                 const fieldStyle = matchFieldConfig[fieldKey] || { label: '🔍 Match', color: '#9CA3AF', border: '#9CA3AF' };
@@ -1148,6 +1191,9 @@ export default function SearchedPage() {
                 } else {
                   console.warn('⚠️ No segments to store');
                 }
+                if (query) {
+                  sessionStorage.setItem('searchQuery', query);
+                }
                 router.get(route('user.video.page', { id: result.video?.id }));
               }} sx={{ color: 'white', bgcolor: '#232323', borderRadius: '50%', p: { xs: 0.75, sm: 1 } }}>
                 <PreviewIcon sx={{ fontSize: { xs: '14px', sm: '16px' } }} />
@@ -1195,10 +1241,7 @@ export default function SearchedPage() {
               <Typography sx={{ color: '#EE1D52', fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.85rem' }, display: { xs: 'none', sm: 'block' } }}>{t('searchedPage.share')}</Typography>
             </Box>
           </Box>
-
-
         </Box>
-
       </Box>
     );
   })

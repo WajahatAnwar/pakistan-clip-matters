@@ -74,6 +74,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/bulk-archive', [VideoApprovalController::class, 'bulkArchive'])->name('admin.video.approval.bulk-archive');
         Route::post('/bulk-unarchive', [VideoApprovalController::class, 'bulkUnarchive'])->name('admin.video.approval.bulk-unarchive');
         Route::post('/bulk-reset-status', [VideoApprovalController::class, 'bulkResetStatus'])->name('admin.video.approval.bulk-reset-status');
+        
+        // Tags and Audio Status
+        Route::post('/{video}/audio-status', [VideoApprovalController::class, 'updateAudioStatus'])->name('admin.video.approval.audio-status');
+        Route::get('/{video}/tags', [VideoApprovalController::class, 'getTags'])->name('admin.video.approval.tags.get');
+        Route::post('/{video}/tags', [VideoApprovalController::class, 'saveTags'])->name('admin.video.approval.tags.save');
     });
 
     // User management — view for all, write restricted by role in controller
@@ -252,6 +257,16 @@ Route::middleware(['auth'])->group(function () {
 
     
 });
+
+// ========================================
+// API WEBHOOK ROUTES (External Services)
+// ========================================
+Route::post('/api/webhooks/qdrant', [\App\Http\Controllers\Api\QdrantWebhookController::class, 'handleWebhook'])->name('api.webhooks.qdrant');
+
+// ========================================
+// SEARCH SUGGESTIONS API
+// ========================================
+Route::get('/api/search/suggestions', [\App\Http\Controllers\Api\SearchSuggestionController::class, 'index'])->name('api.search.suggestions');
 
 // ========================================
 // DROPBOX OAUTH ROUTES
@@ -520,7 +535,7 @@ Route::get('/debug-dropbox', function (Request $request) {
     } catch (\Exception $e) {
         $results['team_info'] = ['error' => $e->getMessage()];
     }
-    
+
     // Get team members list
     try {
         $response = Http::withToken($token)
@@ -906,8 +921,8 @@ Route::get('/list-videos', function (Request $request) {
         $videoService = new \App\Services\VideoProcessingService(auth()->user());
         $dropboxVideos = $videoService->getAvailableVideos();
         Log::info("Found " . count($dropboxVideos) . " videos in Dropbox");
-        // Get ALL videos from DB (no limit) for accurate comparison
-        $userVideos = $videoService->getUserVideos(null, 10000);
+        // Get ALL videos from DB (no limit) for accurate comparison, fetching only needed columns to prevent OOM
+        $userVideos = $videoService->getUserVideos(null, 10000, ['id', 'title', 'dropbox_path', 'processing_status', 'youtube_url']);
 
         // Extract Dropbox video paths for comparison
         $dropboxPaths = [];

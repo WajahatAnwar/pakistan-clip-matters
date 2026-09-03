@@ -84,6 +84,15 @@ class VideoController extends Controller
             }
         }
 
+        // Exclude failed videos with no audio from all tabs except the 'failed' tab
+        if ($status !== 'failed') {
+            $query->where(function ($q) {
+                $q->where('processing_status', '!=', 'failed')
+                  ->orWhere('has_audio', '!=', false)
+                  ->orWhereNull('has_audio');
+            });
+        }
+
         // Apply sorting based on sort parameter
         // Videos under processing always appear on top
         $sortOrder = $sort === 'oldest' ? 'asc' : 'desc';
@@ -593,6 +602,70 @@ class VideoController extends Controller
     }
 
     /**
+     * Normalize friendly search_type to internal search_mode and filter_type
+     */
+    private function normalizeSearchPayload(array $validated): array
+    {
+        // Backward compatibility
+        $searchMode = $validated['search_mode'] ?? null;
+        $filterType = $validated['filter_type'] ?? null;
+        $query = $validated['query'] ?? null;
+        $dateFilter = !empty($validated['filter_year']) || !empty($validated['filter_date']);
+        $language = $validated['language'] ?? null;
+
+        if (!empty($validated['search_type'])) {
+            $type = $validated['search_type'];
+            switch ($type) {
+                case 'smart':
+                    $searchMode = 'semantic';
+                    $filterType = null;
+                    if (empty($query) && !$dateFilter) {
+                        abort(response()->json(['success' => false, 'message' => 'Smart search requires a text query or date filter', 'errors' => ['query' => ['Query is required']]], 422));
+                    }
+                    break;
+                case 'speaker':
+                    $searchMode = 'simple';
+                    $filterType = 'speaker';
+                    if (empty($query)) abort(response()->json(['success' => false, 'message' => 'Speaker search requires a speaker name', 'errors' => ['query' => ['Speaker name is required']]], 422));
+                    break;
+                case 'title':
+                    $searchMode = 'simple';
+                    $filterType = 'title';
+                    if (empty($query)) abort(response()->json(['success' => false, 'message' => 'Title search requires a title query', 'errors' => ['query' => ['Title is required']]], 422));
+                    break;
+                case 'date':
+                    $searchMode = 'simple';
+                    $filterType = 'date';
+                    if (!$dateFilter) abort(response()->json(['success' => false, 'message' => 'Date search requires a valid year, month, or date filter', 'errors' => ['date' => ['Date filter is required']]], 422));
+                    break;
+                case 'language':
+                    $searchMode = 'simple';
+                    $filterType = 'language';
+                    if (empty($language)) abort(response()->json(['success' => false, 'message' => 'Language search requires selecting a language', 'errors' => ['language' => ['Language is required']]], 422));
+                    break;
+                case 'transcript':
+                    $searchMode = 'simple';
+                    $filterType = 'text';
+                    if (empty($query)) abort(response()->json(['success' => false, 'message' => 'Transcript search requires a text query', 'errors' => ['query' => ['Query is required']]], 422));
+                    break;
+                case 'summary':
+                    $searchMode = 'simple';
+                    $filterType = 'summary';
+                    if (empty($query)) abort(response()->json(['success' => false, 'message' => 'Summary search requires a text query', 'errors' => ['query' => ['Query is required']]], 422));
+                    break;
+            }
+        } else {
+            // fallback for legacy
+            $searchMode = $searchMode ?? 'semantic';
+        }
+
+        $validated['search_mode'] = $searchMode;
+        $validated['filter_type'] = $filterType;
+        
+        return $validated;
+    }
+
+    /**
      * Search for similar video segments using embeddings with elastic search
      * Supports: semantic search, fuzzy matching, speaker search, keyword search
      */
@@ -639,6 +712,7 @@ class VideoController extends Controller
         'filter_month' => 'nullable|integer|min:1|max:12',
         'filter_date' => 'nullable|date',
         // Dual-mode search parameters
+        'search_type' => 'nullable|string|in:smart,speaker,title,date,language,transcript,summary',
         'search_mode' => 'nullable|string|in:semantic,simple',
         'filter_type' => 'nullable|string|in:video,speaker,date,language,title,summary,text',
         // Incremental search parameters
@@ -649,6 +723,8 @@ class VideoController extends Controller
     ], [
         'query.max' => $longQueryMessage,
     ]);
+
+    $validated = $this->normalizeSearchPayload($validated);
 
     $query = $validated['query'] ?? null;
     $page = $validated['page'] ?? 1;
@@ -662,19 +738,18 @@ class VideoController extends Controller
     $isIncrementalRequest = $useIncremental || !empty($cursor) || !empty($searchSessionId);
     $isIncrementalCursorRequest = $isIncrementalRequest && !empty($cursor);
 
-    // Handle PHP-side page cursor: "php:{page}:{session_id}"
-    // These are generated by Laravel when it has sliced results over multiple pages.
-    $phpCursorPage = null;
+    // Handle legacy PHP-side page cursor: "php:{page}:{session_id}"
+    // These were generated by Laravel previously.
     if (!empty($cursor) && str_starts_with((string) $cursor, 'php:')) {
         $parts = explode(':', $cursor, 3);
-        $phpCursorPage = (int) ($parts[1] ?? 1);
         $phpCursorSessionId = $parts[2] ?? '';
         if (!empty($phpCursorSessionId) && empty($searchSessionId)) {
             $searchSessionId = $phpCursorSessionId;
         }
-        // Clear cursor so it's not forwarded to Python — this is a Laravel-only page
+        // Old PHP cursors are incompatible with the Python cursor system.
+        // Clear cursor to restart search.
         $cursor = null;
-        $isIncrementalCursorRequest = false; // treat as first-page for Python
+        $isIncrementalCursorRequest = false; 
     }
     // Must be set AFTER PHP cursor decoder so php:N:uuid cursors still allow title fallback
     $allowShortTitleFallback = !$isIncrementalCursorRequest;
@@ -771,118 +846,10 @@ class VideoController extends Controller
     $hasDateFilter = !empty($filterYear) || !empty($filterDate);
     
     // ═══════════════════════════════════════════════════════════════════════════
-    // EXACT TITLE MATCH — highest priority search
-    // If query exactly matches a video title, return that video immediately
+    // EXACT TITLE MATCH — removed to allow semantic search to return full segments
+    // Python backend handles title matching automatically and returns valid segments
     // ═══════════════════════════════════════════════════════════════════════════
-    $isExactTitleMatch = !empty($query) && strlen(trim($query)) >= 3;
-    
-    if ($isExactTitleMatch) {
-        Log::info('Checking for exact title match', [
-            'query' => $query,
-        ]);
 
-        $videoQuery = Video::searchable(); // completed + approved + not archived
-        
-        // Search for exact title match (case-insensitive)
-        $videoQuery->whereRaw('LOWER(title) = LOWER(?)', [trim($query)]);
-
-        // Apply date filters if present
-        if ($filterDate) {
-            $videoQuery->whereDate('video_created_at', $filterDate);
-        } elseif ($filterYear && $filterMonth) {
-            $videoQuery->whereYear('video_created_at', $filterYear)
-                      ->whereMonth('video_created_at', $filterMonth);
-        } elseif ($filterYear) {
-            $videoQuery->whereYear('video_created_at', $filterYear);
-        }
-
-        if ($videoId) $videoQuery->where('id', $videoId);
-        if ($language) $videoQuery->where('language_detected', $language);
-
-        $exactMatchVideos = $videoQuery->get();
-
-        if ($exactMatchVideos->count() > 0) {
-            Log::info('Found exact title match', [
-                'query' => $query,
-                'matched_videos_count' => $exactMatchVideos->count(),
-            ]);
-
-            $groupedByVideo = $exactMatchVideos->map(function ($video) {
-                return [
-                    'video' => [
-                        'id' => $video->id,
-                        'title' => $video->title,
-                        'filename' => $video->filename,
-                        'youtube_url' => $video->youtube_url,
-                        'youtube_video_id' => $video->youtube_video_id,
-                        'language' => $video->language_detected,
-                        'created_at' => $video->created_at->toISOString(),
-                        'video_created_at' => $video->video_created_at?->toISOString(),
-                        'audio_duration_seconds' => $video->audio_duration_seconds,
-                        'summary' => $video->summary,
-                    ],
-                    'match_count' => 0,
-                    'best_score' => 100.0,
-                    'avg_score' => 100.0,
-                    'match_types' => ['exact_title_match'],
-                    'matched_fields' => ['title'],
-                    'segments' => [],
-                ];
-            });
-
-            $totalVideos = $groupedByVideo->count();
-            $totalPages = ceil($totalVideos / $perPage);
-            $offset = ($page - 1) * $perPage;
-            $paginatedVideos = $groupedByVideo->slice($offset, $perPage)->values();
-
-            $responseTimeMs = round((microtime(true) - $startTime) * 1000);
-            SearchLog::create([
-                'user_id' => auth()->id(),
-                'query' => $query,
-                'word' => $word,
-                'speaker' => $speaker,
-                'video_id' => $videoId,
-                'results_count' => 0,
-                'videos_count' => $totalVideos,
-                'min_score' => $minScore,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'response_time_ms' => $responseTimeMs,
-                'search_type' => 'exact_title_match',
-                'filters' => json_encode(['search_mode' => $searchMode, 'filter_type' => $filterType]),
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'query' => $query,
-                'words' => $words,
-                'search_mode' => 'exact_match',
-                'filter_type' => 'title',
-                'filters' => [
-                    'video_id' => $videoId,
-                    'language' => $language,
-                    'filter_year' => $filterYear,
-                    'filter_month' => $filterMonth,
-                    'filter_date' => $filterDate,
-                ],
-                'segments' => [],
-                'grouped_by_video' => $paginatedVideos,
-                'total_segments' => 0,
-                'total_videos' => $totalVideos,
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'total_pages' => $totalPages,
-                'has_next_page' => $page < $totalPages,
-                'has_prev_page' => $page > 1,
-                'search_metadata' => [
-                    'search_type' => 'exact_title_match',
-                    'search_mode' => 'exact_match',
-                    'response_time_ms' => $responseTimeMs,
-                ],
-                'message' => "Found {$totalVideos} video(s) with exact title match: '{$query}'",
-            ]);
-        }
-    }
     
     // ═══════════════════════════════════════════════════════════════════════════
     // SHORT NUMERIC QUERY (2-3 digits) — search in video titles locally.
@@ -897,10 +864,15 @@ class VideoController extends Controller
             'search_mode' => $searchMode,
         ]);
 
-        $videoQuery = Video::searchable();
+        $videoQuery = Video::readyForSearch();
 
-        // Search the numeric value in the video title
-        $videoQuery->where('title', 'LIKE', '%' . trim($query) . '%');
+        // Search the numeric value in the video title or manual tags
+        $videoQuery->where(function ($q) use ($query) {
+            $q->where('title', 'LIKE', '%' . trim($query) . '%')
+              ->orWhereHas('tags', function ($sq) use ($query) {
+                  $sq->where('tag', 'LIKE', '%' . trim($query) . '%');
+              });
+        });
 
         // Apply date filters if present
         if ($filterDate) {
@@ -1012,7 +984,7 @@ class VideoController extends Controller
 
         // Filters handled entirely in Laravel via Eloquent
         if (in_array($filterType, ['date', 'video', 'language'])) {
-            $videoQuery = Video::searchable(); // completed + approved + not archived
+            $videoQuery = Video::readyForSearch(); // completed + approved + not archived
 
             if ($filterType === 'date') {
                 if ($filterDate) {
@@ -1147,7 +1119,7 @@ class VideoController extends Controller
 
                 // Enrich with video data
                 $videoIds = collect($results['results'] ?? [])->pluck('video_id')->filter()->unique()->values()->toArray();
-                $videos = !empty($videoIds) ? Video::searchable()->whereIn('id', $videoIds)->get()->keyBy('id') : collect();
+                $videos = !empty($videoIds) ? Video::readyForSearch()->whereIn('id', $videoIds)->get()->keyBy('id') : collect();
 
                 $enrichedResults = collect($results['results'] ?? [])->map(function ($result) use ($videos) {
                     $vid = $result['video_id'] ?? null;
@@ -1191,12 +1163,31 @@ class VideoController extends Controller
                 // Group by video
                 $groupedByVideo = $enrichedResults->groupBy('video.id')->map(function ($segments) {
                     $first = $segments->first();
-                    // Deduplicate segments by normalized text, keeping highest score
-                    $uniqueSegments = $segments->groupBy(function ($seg) {
-                        return mb_strtolower(trim(preg_replace('/\s+/', ' ', $seg['text'] ?? '')));
-                    })->map(function ($dupes) {
+                    // Deduplicate identical segment IDs, keeping highest score
+                    $uniqueById = $segments->groupBy('segment_id')->map(function ($dupes) {
                         return $dupes->sortByDesc('score')->first();
                     })->values();
+
+                    // Filter out time-overlapping segments, keeping highest score
+                    $sortedSegments = $uniqueById->sortBy('start_time')->values();
+                    $finalSegments = collect();
+                    foreach ($sortedSegments as $seg) {
+                        if ($finalSegments->isEmpty()) {
+                            $finalSegments->push($seg);
+                        } else {
+                            $last = $finalSegments->last();
+                            // Overlap condition: segment starts before previous segment ends
+                            if ($seg['start_time'] < $last['end_time']) {
+                                if ($seg['score'] > $last['score']) {
+                                    $finalSegments->pop();
+                                    $finalSegments->push($seg);
+                                }
+                            } else {
+                                $finalSegments->push($seg);
+                            }
+                        }
+                    }
+                    $uniqueSegments = $finalSegments;
                     return [
                         'video' => $first['video'],
                         'match_count' => $uniqueSegments->count(),
@@ -1221,6 +1212,81 @@ class VideoController extends Controller
                         ])->values()
                     ];
                 })->values();
+
+                if (!empty($query) && $filterType === 'text') {
+                    $baseQ = \App\Models\Video::readyForSearch();
+                    if ($filterDate) {
+                        $baseQ->whereDate('video_created_at', $filterDate);
+                    } elseif ($filterYear && $filterMonth) {
+                        $baseQ->whereYear('video_created_at', $filterYear)
+                              ->whereMonth('video_created_at', $filterMonth);
+                    } elseif ($filterYear) {
+                        $baseQ->whereYear('video_created_at', $filterYear);
+                    }
+                    if ($videoId) $baseQ->where('id', $videoId);
+                    if ($language) $baseQ->where('language_detected', $language);
+
+                    $exactTagVideos = (clone $baseQ)
+                        ->whereHas('tags', function ($sq) use ($query) {
+                            $sq->where('tag', 'LIKE', '%' . trim($query) . '%');
+                        })
+                        ->orderByDesc('video_created_at')
+                        ->orderByDesc('created_at')
+                        ->limit(40)
+                        ->get();
+                        
+                    $tagVideoIds = $exactTagVideos->pluck('id')->toArray();
+                    $newGroupedByVideo = collect();
+                    
+                    foreach ($exactTagVideos as $video) {
+                        $existing = $groupedByVideo->firstWhere('video.id', $video->id);
+                        if ($existing) {
+                            $existing = (array) $existing;
+                            $matchTypes = collect($existing['match_types'] ?? []);
+                            if (!$matchTypes->contains('tag_match')) {
+                                $matchTypes->push('tag_match');
+                            }
+                            $existing['match_types'] = $matchTypes->values()->toArray();
+                            
+                            $matchedFields = collect($existing['matched_fields'] ?? []);
+                            if (!$matchedFields->contains('manual_tags')) {
+                                $matchedFields->push('manual_tags');
+                            }
+                            $existing['matched_fields'] = $matchedFields->values()->toArray();
+                            $newGroupedByVideo->push($existing);
+                        } else {
+                            $newGroupedByVideo->push([
+                                'video' => [
+                                    'id' => $video->id,
+                                    'title' => $video->title,
+                                    'filename' => $video->filename,
+                                    'youtube_url' => $video->youtube_url,
+                                    'youtube_video_id' => $video->youtube_video_id,
+                                    'language' => $video->language_detected,
+                                    'created_at' => $video->created_at->toISOString(),
+                                    'video_created_at' => $video->video_created_at?->toISOString(),
+                                    'audio_duration_seconds' => $video->audio_duration_seconds,
+                                    'summary' => $video->summary,
+                                ],
+                                'match_count' => 0,
+                                'best_score' => 1.0,
+                                'avg_score' => 1.0,
+                                'match_types' => ['tag_match'],
+                                'matched_fields' => ['manual_tags'],
+                                'segments' => [],
+                                'is_video_only' => true,
+                            ]);
+                        }
+                    }
+                    
+                    foreach ($groupedByVideo as $group) {
+                        $group = (array) $group;
+                        if (!in_array($group['video']['id'], $tagVideoIds)) {
+                            $newGroupedByVideo->push($group);
+                        }
+                    }
+                    $groupedByVideo = $newGroupedByVideo;
+                }
 
                 $totalVideos = $groupedByVideo->count();
                 // Count actual unique segments after deduplication
@@ -1670,7 +1736,7 @@ class VideoController extends Controller
             return collect();
         }
 
-        $titleQuery = Video::searchable();
+        $titleQuery = Video::readyForSearch();
 
         // For person aliases search ALL known name variants (OR) so that every
         // related video title is matched regardless of how it was labelled.
@@ -1682,12 +1748,20 @@ class VideoController extends Controller
             $titleQuery->where(function ($q) use ($allTitleTerms) {
                 foreach ($allTitleTerms as $term) {
                     if (!empty(trim($term))) {
-                        $q->orWhere('title', 'LIKE', '%' . $term . '%');
+                        $q->orWhere('title', 'LIKE', '%' . $term . '%')
+                          ->orWhereHas('tags', function ($sq) use ($term) {
+                              $sq->where('tag', 'LIKE', '%' . $term . '%');
+                          });
                     }
                 }
             });
         } else {
-            $titleQuery->where('title', 'LIKE', '%' . $normalizedQuery . '%');
+            $titleQuery->where(function ($q) use ($normalizedQuery) {
+                $q->where('title', 'LIKE', '%' . $normalizedQuery . '%')
+                  ->orWhereHas('tags', function ($sq) use ($normalizedQuery) {
+                      $sq->where('tag', 'LIKE', '%' . $normalizedQuery . '%');
+                  });
+            });
         }
 
         if ($filterDate) {
@@ -1975,6 +2049,7 @@ class VideoController extends Controller
         $fallbackPayload['words'] = $fallbackWords;
         $fallbackPayload['search_mode'] = 'simple';
         $fallbackPayload['filter_type'] = 'text';
+        $fallbackPayload['search_type'] = 'transcript'; // Force simple transcript search instead of original smart search
         $fallbackPayload['use_incremental'] = false;
         $fallbackPayload['cursor'] = null;
         $fallbackPayload['search_session_id'] = null;
@@ -2061,11 +2136,14 @@ class VideoController extends Controller
             // Cursor requests paginate cached Python results — fast (30s timeout)
             // First-page requests run the full search pipeline — slow (150s timeout)
             $hasCursor = !empty($cursor);
-            $httpTimeout = 120;
+            // Return a controlled JSON timeout before the public proxy replaces
+            // the response with an HTML 524 page.
+            $httpTimeout = 75;
             // No retries: retrying a slow first-page request triggers ANOTHER full pipeline run
             // on the Python service, multiplying load with no benefit
             $response = Http::retry(1, 0)
-                ->timeout(120)
+                ->connectTimeout(10)
+                ->timeout($httpTimeout)
                 ->withHeaders([
                     'X-API-Key' => $this->getEmbeddingApiKey(),
                     'Content-Type' => 'application/json',
@@ -2088,8 +2166,11 @@ class VideoController extends Controller
             $results = Cache::remember($cacheKey, $cacheTtl, function () use ($embeddingServiceUrl, $searchPayload, $endpoint) {
                 // Call the embedding service with API key authentication and retry logic
                 // Speaker-only searches scan many segments so need longer timeout
-                $response = Http::retry(2, 1000)
-                    ->timeout(120)
+                // Do not repeat an expensive semantic pipeline inside one
+                // browser request; a second attempt can outlive the proxy.
+                $response = Http::retry(1, 0)
+                    ->connectTimeout(10)
+                    ->timeout(75)
                     ->withHeaders([
                         'X-API-Key' => $this->getEmbeddingApiKey(),
                         'Content-Type' => 'application/json',
@@ -2144,34 +2225,6 @@ class VideoController extends Controller
                 }
             }
 
-            return response()->json([
-                'success' => true,
-                'query' => $query,
-                'words' => $words,
-                'speaker_filter' => $results['speaker_filter'] ?? null,
-                'filters' => [
-                    'video_id' => $videoId,
-                    'speaker' => $speaker,
-                    'title' => $title,
-                    'language' => $language,
-                    'min_score' => $minScore,
-                    'time_range' => $timeRange,
-                    'max_scanned' => $maxScanned, // NEW
-                    'filter_year' => $filterYear,
-                    'filter_month' => $filterMonth,
-                    'filter_date' => $filterDate,
-                ],
-                'segments' => [],
-                'grouped_by_video' => [],
-                'total_segments' => 0,
-                'total_videos' => 0,
-                'message' => 'No matching segments found. Try adjusting search parameters.',
-                'elastic_features' => [
-                    'fuzzy_matching' => true,
-                    'semantic_search' => !empty($query),
-                    'keyword_search' => !empty($words)
-                ]
-            ]);
         }
 
         $buildVideoLookup = function (array $candidateVideoIds) use (
@@ -2287,7 +2340,8 @@ class VideoController extends Controller
                 $recoveryPayload['search_session_id'] = $resolvedSessionId;
 
                 $recoveryResponse = Http::retry(1, 0)
-                    ->timeout(120)
+                    ->connectTimeout(10)
+                    ->timeout(75)
                     ->withHeaders([
                         'X-API-Key' => $this->getEmbeddingApiKey(),
                         'Content-Type' => 'application/json',
@@ -2387,48 +2441,36 @@ class VideoController extends Controller
                 }
             }
 
-            return response()->json([
-                'success' => true,
-                'query' => $query,
-                'words' => $words,
-                'speaker_filter' => $results['speaker_filter'] ?? null,
-                'filters' => [
-                    'video_id' => $videoId,
-                    'speaker' => $speaker,
-                    'title' => $title,
-                    'language' => $language,
-                    'min_score' => $minScore,
-                    'time_range' => $timeRange,
-                    'max_scanned' => $maxScanned,
-                    'filter_year' => $filterYear,
-                    'filter_month' => $filterMonth,
-                    'filter_date' => $filterDate,
-                ],
-                'segments' => [],
-                'grouped_by_video' => [],
-                'total_segments' => 0,
-                'total_videos' => 0,
-                'message' => 'No matching segments found after filtering',
-                'elastic_features' => [
-                    'fuzzy_matching' => true,
-                    'typo_tolerance' => true,
-                    'semantic_search' => !empty($query),
-                    'keyword_search' => !empty($words),
-                    'speaker_search' => !empty($speaker),
-                    'title_search' => !empty($title)
-                ]
-            ]);
         }
 
         // Group results by video
         $groupedByVideo = $enrichedResults->groupBy('video.id')->map(function ($segments, $videoId) {
             $firstSegment = $segments->first();
-            // Deduplicate segments by normalized text, keeping highest score
-            $uniqueSegments = $segments->groupBy(function ($seg) {
-                return mb_strtolower(trim(preg_replace('/\s+/', ' ', $seg['text'] ?? '')));
-            })->map(function ($dupes) {
+            // Deduplicate identical segment IDs, keeping highest score
+            $uniqueById = $segments->groupBy('segment_id')->map(function ($dupes) {
                 return $dupes->sortByDesc('score')->first();
             })->values();
+
+            // Filter out time-overlapping segments, keeping highest score
+            $sortedSegments = $uniqueById->sortBy('start_time')->values();
+            $finalSegments = collect();
+            foreach ($sortedSegments as $seg) {
+                if ($finalSegments->isEmpty()) {
+                    $finalSegments->push($seg);
+                } else {
+                    $last = $finalSegments->last();
+                    // Overlap condition: segment starts before previous segment ends
+                    if ($seg['start_time'] < $last['end_time']) {
+                        if ($seg['score'] > $last['score']) {
+                            $finalSegments->pop();
+                            $finalSegments->push($seg);
+                        }
+                    } else {
+                        $finalSegments->push($seg);
+                    }
+                }
+            }
+            $uniqueSegments = $finalSegments;
             return [
                 'video' => $firstSegment['video'],
                 'match_count' => $uniqueSegments->count(),
@@ -2457,11 +2499,176 @@ class VideoController extends Controller
             ];
         })->values();
 
+        // ── EXACT TAG AND TITLE MATCHING & RANKING ──
+        $exactTagVideos = collect();
+        $exactTitleVideos = collect();
+        
+        if (!empty($query)) {
+            $baseQuery = function() use ($filterDate, $filterYear, $filterMonth, $videoId, $language) {
+                $q = Video::readyForSearch();
+                if ($filterDate) {
+                    $q->whereDate('video_created_at', $filterDate);
+                } elseif ($filterYear && $filterMonth) {
+                    $q->whereYear('video_created_at', $filterYear)
+                        ->whereMonth('video_created_at', $filterMonth);
+                } elseif ($filterYear) {
+                    $q->whereYear('video_created_at', $filterYear);
+                }
+                if ($videoId) {
+                    $q->where('id', $videoId);
+                }
+                if ($language) {
+                    $q->where('language_detected', $language);
+                }
+                return $q;
+            };
+
+            $exactTagVideos = (clone $baseQuery())
+                ->whereHas('tags', function ($sq) use ($query) {
+                    $sq->where('tag', 'LIKE', '%' . trim($query) . '%');
+                })
+                ->orderByDesc('video_created_at')
+                ->orderByDesc('created_at')
+                ->limit(40)
+                ->get();
+            
+                
+            $exactTitleVideos = (clone $baseQuery())
+                ->where('title', 'LIKE', '%' . trim($query) . '%')
+                ->orderByDesc('video_created_at')
+                ->orderByDesc('created_at')
+                ->limit(40)
+                ->get();
+        }
+
+        $tagVideoIds = $exactTagVideos->pluck('id')->toArray();
+        $titleVideoIds = $exactTitleVideos->pluck('id')->toArray();
+        
+        $newGroupedByVideo = collect();
+        
+        // 1. Add all exact tag matches first (HIGHEST PRIORITY)
+        foreach ($exactTagVideos as $video) {
+            // Find if semantic search already found it
+            $existing = $groupedByVideo->firstWhere('video.id', $video->id);
+            if ($existing) {
+                $existing = (array) $existing;
+                $matchTypes = collect($existing['match_types']);
+                if (!$matchTypes->contains('tag_match')) {
+                    $matchTypes->push('tag_match');
+                }
+                if (!in_array($video->id, $titleVideoIds)) {
+                    $matchTypes = $matchTypes->reject(fn($v) => in_array($v, ['title_match', 'keyword']));
+                }
+                $existing['match_types'] = $matchTypes->values()->toArray();
+
+                $matchedFields = collect($existing['matched_fields']);
+                if (!$matchedFields->contains('manual_tags')) {
+                    $matchedFields->push('manual_tags');
+                }
+                if (!in_array($video->id, $titleVideoIds)) {
+                    $matchedFields = $matchedFields->reject(fn($v) => in_array($v, ['video_title']));
+                }
+                $existing['matched_fields'] = $matchedFields->values()->toArray();
+                $newGroupedByVideo->push($existing);
+            } else {
+                $newGroupedByVideo->push([
+                    'video' => [
+                        'id' => $video->id,
+                        'title' => $video->title,
+                        'filename' => $video->filename,
+                        'youtube_url' => $video->youtube_url,
+                        'youtube_video_id' => $video->youtube_video_id,
+                        'language' => $video->language_detected,
+                        'created_at' => $video->created_at->toISOString(),
+                        'video_created_at' => $video->video_created_at?->toISOString(),
+                        'audio_duration_seconds' => $video->audio_duration_seconds,
+                        'summary' => $video->summary,
+                    ],
+                    'match_count' => 0,
+                    'best_score' => 1.0,
+                    'avg_score' => 1.0,
+                    'match_types' => ['tag_match'],
+                    'matched_fields' => ['manual_tags'],
+                    'segments' => [],
+                    'is_video_only' => true,
+                ]);
+            }
+        }
+        
+        // 2. Add exact title matches (that aren't already tag matches)
+        foreach ($exactTitleVideos as $video) {
+            if (in_array($video->id, $tagVideoIds)) continue; 
+            
+            $existing = $groupedByVideo->firstWhere('video.id', $video->id);
+            if ($existing) {
+                $existing = (array) $existing;
+                $matchTypes = collect($existing['match_types']);
+                if (!$matchTypes->contains('title_match')) {
+                    $matchTypes->push('title_match');
+                }
+                $existing['match_types'] = $matchTypes->values()->toArray();
+
+                $matchedFields = collect($existing['matched_fields']);
+                if (!$matchedFields->contains('video_title')) {
+                    $matchedFields->push('video_title');
+                }
+                $existing['matched_fields'] = $matchedFields->values()->toArray();
+                $newGroupedByVideo->push($existing);
+            } else {
+                $newGroupedByVideo->push([
+                    'video' => [
+                        'id' => $video->id,
+                        'title' => $video->title,
+                        'filename' => $video->filename,
+                        'youtube_url' => $video->youtube_url,
+                        'youtube_video_id' => $video->youtube_video_id,
+                        'language' => $video->language_detected,
+                        'created_at' => $video->created_at->toISOString(),
+                        'video_created_at' => $video->video_created_at?->toISOString(),
+                        'audio_duration_seconds' => $video->audio_duration_seconds,
+                        'summary' => $video->summary,
+                    ],
+                    'match_count' => 0,
+                    'best_score' => 0.9,
+                    'avg_score' => 0.9,
+                    'match_types' => ['title_match'],
+                    'matched_fields' => ['video_title'],
+                    'segments' => [],
+                    'is_video_only' => true,
+                ]);
+            }
+        }
+        
+        // 3. Add remaining videos from semantic search
+        foreach ($groupedByVideo as $group) {
+            $group = (array) $group;
+            $vid = $group['video']['id'];
+            if (!in_array($vid, $tagVideoIds) && !in_array($vid, $titleVideoIds)) {
+                // Ensure no fake title_match leaks through from semantic fallback
+                $group['match_types'] = collect($group['match_types'])
+                    ->reject(fn($v) => in_array($v, ['title_match', 'tag_match']))
+                    ->values()->toArray();
+                    
+                $group['matched_fields'] = collect($group['matched_fields'])
+                    ->reject(fn($v) => in_array($v, ['video_title', 'manual_tags']))
+                    ->values()->toArray();
+                
+                if (empty($group['match_types'])) {
+                    $group['match_types'] = ['semantic'];
+                }
+                
+                $newGroupedByVideo->push($group);
+            }
+        }
+        
+        $groupedByVideo = $newGroupedByVideo;
+        
         $existingVideoIds = $groupedByVideo->pluck('video.id')
             ->filter()
             ->map(fn($id) => (int) $id)
             ->values()
             ->all();
+
 
         if ($allowShortTitleFallback) {
             $titleFallbackGroups = $buildShortTitleFallback($existingVideoIds);
@@ -2499,15 +2706,13 @@ class VideoController extends Controller
         // Count actual unique segments after deduplication
         $totalUniqueSegments = $groupedByVideo->sum(fn($v) => count($v['segments'] ?? []));
         
-        // For incremental search apply per_page slicing so first response is exactly 10 videos.
-        // Python already cached all results server-side; subsequent cursor requests get the next batch.
+        // Python already handles batching for incremental search server-side.
         if ($isIncrementalSearch) {
-            $totalPages = max(1, (int) ceil($totalVideos / $perPage));
-            $currentIncrementalPage = $phpCursorPage ?? 1;
-            $offset = ($currentIncrementalPage - 1) * $perPage;
-            $paginatedVideos = $groupedByVideo->slice($offset, $perPage)->values();
+            $paginatedVideos = $groupedByVideo;
+            $totalPages = 1;
+            $offset = 0;
         } else {
-            $totalPages = ceil($totalVideos / $perPage);
+            $totalPages = max(1, (int) ceil($totalVideos / $perPage));
             $offset = ($page - 1) * $perPage;
             // Slice results for current page
             $paginatedVideos = $groupedByVideo->slice($offset, $perPage)->values();
@@ -2590,39 +2795,29 @@ class VideoController extends Controller
 
         // Add cursor metadata if using incremental search
         if ($isIncrementalSearch) {
-            // PHP-side slicing means there may be more videos even when Python says has_more=false.
-            // PHP is authoritative: it always re-fetches Python from cursor=null (cache hit) so
-            // Python's own cursor/has_more reflects its internal batch pagination, not PHP pages.
-            // Using Python's has_more here causes an infinite "View More" loop (page 2 gets offset=10
-            // but $totalVideos is still 3, returning 0 results while has_more stays true).
-            $phpHasMorePages = $currentIncrementalPage < $totalPages; // true only if there are pages after the current one
-            $effectiveHasMore = $phpHasMorePages;
-
-            // Encode a simple PHP-side page cursor so "View More" can get the next slice.
-            // Format: "php:{page}:{session_id}" — frontend sends this back as cursor.
-            $nextPhpPage = ($currentIncrementalPage ?? 1) + 1;
-            $phpCursorNext = $effectiveHasMore
-                ? 'php:' . $nextPhpPage . ':' . ($results['search_session_id'] ?? '')
-                : ($results['cursor']['next'] ?? null);
+            // Forward Python's native cursor exactly as received.
+            $pythonCursorNext = $results['cursor']['next'] ?? null;
+            $pythonHasMore = !empty($pythonCursorNext) && ($results['cursor']['has_more'] ?? true);
+            
+            // Safety: if python returned a cursor but we ended up with 0 videos after filtering,
+            // don't advertise has_more.
+            $effectiveHasMore = $pythonHasMore && $paginatedVideos->isNotEmpty();
 
             $responseData['cursor'] = [
-                'next' => $phpCursorNext,
+                'next' => $pythonCursorNext,
                 'has_more' => $effectiveHasMore,
-                // PHP's $totalVideos is authoritative — it includes title-fallback videos and
-                // excludes segments that were filtered out.  Python's total_available reflects
-                // its raw Qdrant cache and must NOT be used as the display total.
-                'total_available' => $totalVideos,
+                'total_available' => $results['cursor']['total_available'] ?? $totalVideos,
             ];
             $responseData['search_session_id'] = $results['search_session_id'] ?? null;
             $responseData['is_incremental'] = true;
             $responseData['batch_metadata'] = $results['metadata'] ?? [];
 
             // Keep pagination fields in the response so frontend page-based fallback also works
-            $responseData['current_page'] = $currentIncrementalPage ?? 1;
-            $responseData['per_page'] = $perPage;
-            $responseData['total_pages'] = $totalPages;
-            $responseData['has_next_page'] = $phpHasMorePages;
-            $responseData['has_prev_page'] = ($currentIncrementalPage ?? 1) > 1;
+            $responseData['current_page'] = 1;
+            $responseData['per_page'] = $batchSize;
+            $responseData['total_pages'] = 1;
+            $responseData['has_next_page'] = $effectiveHasMore;
+            $responseData['has_prev_page'] = false;
             
             Log::info('📦 Incremental search response', [
                 'session_id' => substr($responseData['search_session_id'] ?? '', 0, 8),
@@ -2675,6 +2870,17 @@ class VideoController extends Controller
 
         return response()->json($responseData, 200, [], JSON_UNESCAPED_UNICODE);
 
+    } catch (\Illuminate\Http\Client\ConnectionException $e) {
+        Log::warning('Embedding search timed out before proxy deadline', [
+            'query' => $query,
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Search timed out. Please retry in a moment.',
+            'status_code' => 504,
+        ], 504);
     } catch (\RuntimeException $e) {
         // Handle embedding service HTTP failures (thrown from Cache::remember)
         $parts = explode('|', $e->getMessage(), 3);

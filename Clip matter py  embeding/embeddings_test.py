@@ -3,7 +3,7 @@ from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastembed import TextEmbedding
 from qdrant_client import models, QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchText, SearchParams, ScoredPoint
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchText, SearchParams, ScoredPoint, MatchAny
 import uuid
 import os
 import logging
@@ -24,6 +24,22 @@ from openai import OpenAI
 import tiktoken
 import asyncio
 import json as json_module
+from semantic_query_decomposition import (
+    build_structured_rerank_fallback,
+    decompose_semantic_query,
+    has_conceptual_topic_evidence,
+    has_complete_facet_coverage,
+    has_minimum_topic_evidence,
+    passes_structured_topic_validation,
+    recover_empty_structured_rerank,
+)
+from redis import Redis
+from rq import Queue
+
+# ============== REDIS QUEUE INITIALIZATION ==============
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_conn = Redis.from_url(REDIS_URL)
+task_queue = Queue('video_processing', connection=redis_conn)
 
 # ============== LOGGING CONFIGURATION ==============
 logging.basicConfig(
@@ -100,7 +116,57 @@ STOP_WORDS = frozenset({
     # Urdu common words (transliterated)
     "hai", "hain", "tha", "thi", "the", "ka", "ki", "ke", "ko", "ne", "se", "mein", "par",
     "aur", "ya", "lekin", "jo", "jab", "kya", "kaise", "kahan", "yeh", "woh", "koi", "kuch",
+    # Urdu common words (native script) — articles, prepositions, pronouns, conjunctions
+    "میں", "کا", "کی", "کے", "کو", "نے", "سے", "پر", "اور", "یا", "لیکن", "جو", "جب",
+    "کیا", "کیسے", "کہاں", "یہ", "وہ", "کوئی", "کچھ", "ہے", "ہیں", "تھا", "تھی", "تھے",
+    "اس", "ان", "اپنے", "اپنی", "اپنا", "تو", "بھی", "ہی", "نہیں", "مگر", "پھر", "ابھی",
+    "وہاں", "یہاں", "جہاں", "جیسے", "جیسا", "آپ", "ہم", "تم", "مجھے", "ہمیں", "انہوں",
+    "speech", "from", "on", "in", "at", "the", "and", "for", "of", "to", "with", "by", "a", "an", "is", "are", "was", "were", "this", "that", "it", # Common English filler words
+
+    # English filler / conversational words
+    "please", "plz", "pls", "kindly", "actually", "basically", "literally",
+    "maybe", "probably", "perhaps", "okay", "ok", "yes", "yeah", "yep",
+    "nope", "hmm", "um", "uh", "like", "means", "mean", "sir", "bro",
+    "brother", "dear", "thanks", "thank", "hello", "hi", "hey",
+
+    # Roman Urdu filler/common words
+    "bhai", "bahi", "jan", "jee", "ji", "han", "haan", "nahi", "nahin",
+    "nai", "na", "to", "tu", "tou", "phir", "ab", "abi", "abhi",
+    "bas", "bus", "waise", "wesy", "wese", "matlab", "mtlb",
+    "yani", "yaani", "lagta", "lagti", "lagay", "laga", "lag",
+    "mujhe", "mujhy", "muje", "hum", "ham", "aap", "ap", "tum",
+    "mera", "meri", "mere", "tera", "teri", "tere", "unka", "unki",
+    "unke", "iska", "iski", "iske", "uska", "uski", "uske",
+    "idhar", "udhar", "kidhar", "kidr", "kidar",
+    "acha", "achha", "accha", "theek", "thik", "sahi",
+    "wala", "wali", "walay", "wale", "waly",
+    "kar", "karo", "karen", "karna", "kr", "krlena", "karwana",
+    "hona", "hoga", "hogi", "hongay", "raha", "rahi", "rahe",
+    "rha", "rhi", "rhy", "gaya", "gayi", "gaye",
+    "chahiye", "chaiye", "chaheye", "zaroori", "zroori",
+    "bhut", "bohat", "bahut", "zyada", "ziada", "kam",
+    "shayad", "almost", "qareeb", "qarib",
+
+    # Urdu native filler/common words
+    "براہ", "مہربانی", "شکریہ", "جناب", "بھائی", "جی", "ہاں",
+    "نہ", "نا", "بس", "اصل", "دراصل", "تقریباً", "شاید",
+    "مطلب", "یعنی", "اچھا", "ٹھیک", "صحیح", "زیادہ", "کم",
+    "اب", "بعد", "پہلے", "ساتھ", "والا", "والی", "والے",
+    "رہا", "رہی", "رہے", "گیا", "گئی", "گئے", "کر", "کریں",
+    "کرنا", "ہونا", "ہوگا", "ہوگی", "چاہیے", "ضروری",
+    "سے", "نے", "میں", "پر", "کو", "کا", "کی", "کے", 
+    "وہ", "یہ", "کیا", "کون", "کب", "کہاں", "کیسے", 
+    "ساتھ", "اگر", "جب", "تب", "پھر", "تو", "بھی", "ہی", 
+    "نہیں", "بس", "کچھ", "کچھ بھی"
 })
+
+# These are content-bearing entities, not grammatical noise. Preserve them in
+# lexical hints while the complete phrase remains intact for semantic search.
+MEANINGFUL_SEARCH_TERMS = frozenset({
+    "child", "children", "woman", "women", "person", "people",
+    "right", "rights", "work", "worker", "workers", "high", "low",
+})
+STOP_WORDS = STOP_WORDS.difference(MEANINGFUL_SEARCH_TERMS).union({"ur"})
 
 # ============== PERSON NAME ALIASES ==============
 # Maps known aliases/abbreviations to canonical names with all their variants.
@@ -181,6 +247,7 @@ PERSON_ALIASES = {
             "ameer jamat", "ameer-e-jamat", "ameer jamat e islami",
             "ameer jamaat e islami", "ameer ji", "ameer sahab",
             "ameer jama'at", "ameer jamaat islami",
+            "ameer hafeez", "ameer hafiz", "ameer hafiz naeem",
         ],
         # Speaker field values stored in Qdrant (various forms used at ingestion time)
         "speaker_variants": [
@@ -411,6 +478,7 @@ RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 class EmbedVideoRequest(BaseModel):
     video_id: int = Field(..., gt=0, description="Video ID must be positive")
     identification_segments: List[dict] = Field(..., min_length=1)
+    webhook_url: Optional[str] = Field(default=None, description="Optional webhook URL to receive status callbacks")
     video_title: str = Field(default="", max_length=500)
     video_filename: str = Field(default="", max_length=500)
     youtube_url: Optional[str] = Field(default="", max_length=1000)
@@ -451,6 +519,8 @@ class SearchRequest(BaseModel):
     filter_year: Optional[int] = Field(default=None, ge=1900, le=2100)
     filter_month: Optional[int] = Field(default=None, ge=1, le=12)
     filter_date: Optional[str] = Field(default=None, max_length=20)
+    # Authenticated canary override. Production default remains controlled by env.
+    query_decomposition_mode: Optional[str] = Field(default=None, pattern="^(off|shadow|on)$")
 
 class SuggestRequest(BaseModel):
     query: str = Field(..., min_length=2, max_length=200)
@@ -483,6 +553,7 @@ class IncrementalSearchRequest(BaseModel):
     cursor: Optional[str] = Field(default=None, description="Base64-encoded cursor for pagination")
     batch_size: int = Field(default=10, ge=1, le=50, description="Number of results per batch")
     search_session_id: Optional[str] = Field(default=None, max_length=100, description="UUID to identify search session")
+    query_decomposition_mode: Optional[str] = Field(default=None, pattern="^(off|shadow|on)$")
 
 # ============== RATE LIMITER ==============
 class RateLimiter:
@@ -1038,21 +1109,23 @@ def validate_query_relevance(query: str, top_results: List[Dict]) -> Dict:
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": """You are a relevance validator for a search engine. Your job is to determine if search results actually match the user's query.
+                {"role": "system", "content": """You are a domain gatekeeper for a political/social video search engine. Your job is to determine if the user's query conceptually fits within the domain of the retrieved documents (Pakistan politics, social issues, religion, current events).
 
 Return ONLY valid JSON: {"relevant": boolean, "scores": [score1, score2, ...], "explanation": "reason"}
 
 Score each result 0-10:
-- 8-10: Directly discusses the query topic/person
-- 5-7: Related to the query domain
-- 2-4: Loosely connected or tangential
-- 0-1: Completely unrelated
+- 8-10: Conceptually matches the query's domain/topic
+- 5-7: Broadly related to the general topic
+- 3-4: Loosely connected
+- 0-2: Completely unrelated domain (e.g. searching 'Bill Gates' or 'Minecraft' but results are about Pakistan politics)
 
-Set "relevant": true ONLY if at least one result scores >= 5.
-Set "relevant": false if ALL results are off-topic.
+CRITICAL RULES:
+- If the query is a broad political/social concept (e.g. 'Democracy', 'Constitution', 'Education'), consider it IN-DOMAIN and score highly.
+- ONLY reject queries that are completely foreign to the corpus.
+- Do NOT require exact keyword matches. A query about 'Democracy' is highly relevant to a result discussing 'elections, voting, rights, and parliament'. Assess the conceptual meaning.
 
-Be STRICT: If searching for "Bill Gates" but results are about Pakistan politics, that's irrelevant.
-If searching for a person/topic not in the database, all results will be off-topic."""},
+Set "relevant": true ONLY if at least one result scores >= 3.
+Set "relevant": false if ALL results are completely out-of-domain."""},
                 {"role": "user", "content": f"Query: {query}\n\nTop Results:\n{docs_text}\n\nAre these results relevant to the query?"}
             ],
             max_tokens=300,
@@ -1088,7 +1161,12 @@ If searching for a person/topic not in the database, all results will be off-top
         return {"is_relevant": True, "max_relevance": 1.0, "relevant_count": len(top_results), "explanation": ""}
 
 
-def rerank_with_llm(query: str, results: List[Dict], top_k: int = 20) -> List[Dict]:
+def rerank_with_llm(
+    query: str,
+    results: List[Dict],
+    top_k: int = 20,
+    require_complete_topic: bool = False,
+) -> List[Dict]:
     """
     LLM-based reranking using GPT-4o-mini.
     Replaces Cohere (English-only) with multilingual GPT-4o-mini reranker.
@@ -1113,59 +1191,144 @@ def rerank_with_llm(query: str, results: List[Dict], top_k: int = 20) -> List[Di
             docs.append(f"[{i}] Speaker: {speaker} | Title: {title} | Text: {text}")
         
         docs_text = "\n".join(docs)
+        validation_mode = (
+            "This is a structured speaker-plus-topic search. Precision is mandatory: "
+            "mark c=true only when the passage supports the whole topic."
+            if require_complete_topic
+            else "Assess conceptual relevance and still report complete/incidental flags."
+        )
         
-        response = openai_client.chat.completions.create(
+        try:
+            response = openai_client.with_options(max_retries=0).chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": """You are a STRICT search result relevance judge for a video transcript search engine.
+                {"role": "system", "content": """You are a search result relevance judge for a video transcript search engine.
 Content may be in Urdu, English, or mixed. Rate each transcript segment's relevance to the user's search query.
 
-Return ONLY valid JSON: {"scores": [{"i": 0, "s": 8}, {"i": 1, "s": 3}, ...]}
-Where "i" is the document index and "s" is relevance score 0-10.
+Return ONLY valid JSON:
+{"facets":[{"id":"f1","d":"required meaning"}],"scores":[{"i":0,"s":8,"f":["f1"],"x":false},...]}
+Where:
+- "facets" lists the minimum independently required semantic facets of the COMPLETE query topic.
+- Each facet has a short stable "id" and description "d".
+- "i" is the document index.
+- "s" is relevance score 0-10.
+- "f" lists only facet IDs substantively supported by the transcript passage.
+- "x" is true when the match is incidental, title-only, a passing mention, or based on disconnected component words.
 
-Scoring guide (BE STRICT):
-- 10: Perfect match - directly answers the query, exact topic/person
-- 7-9: Highly relevant - clearly discusses the queried topic/person
-- 4-6: Partially relevant - mentions topic but not the main focus
-- 1-3: Marginally relevant - only loosely connected, different topic
-- 0: Completely unrelated - wrong topic/person/domain entirely
+Scoring guide:
+- 8-10: Highly relevant - clearly discusses the queried topic/person or underlying meaning.
+- 5-7: Partially relevant - conceptually related, mentions topic but not main focus.
+- 3-4: Marginally relevant - loosely connected.
+- 0-2: Completely unrelated - wrong topic/person/domain entirely.
 
 CRITICAL RULES:
-- If query is "Bill Gates" but result is about Pakistan politics → score 0-1
-- If query is about technology but result is about religion → score 0-2
-- If query person/topic is NOT mentioned in the result → score 0-3
-- Only give scores >= 7 if the result is ACTUALLY ABOUT what the user searched for
-
-Be VERY strict. Most results should get low scores if they don't match the query topic."""}, 
-                {"role": "user", "content": f"Search Query: {query}\n\nDocuments:\n{docs_text}"}
+- First emit the minimum semantic facets. Do not split established single concepts into dictionary words: "Social Media", "Business Community", and "Higher Education" are each ONE indivisible concept facet. Every relational/possessive rights topic requires TWO facets: the exact beneficiary group (for example women, children, workers, farmers, or provinces) AND substantive rights/equality/protection/entitlement. Never infer the beneficiary from the query or title. "Democratic Struggle" requires democracy/rights AND an actual struggle, movement, protest, resistance, or campaign.
+- For each passage list only facets supported by the transcript itself. The title and speaker cannot support a facet.
+- Separate words with unrelated meanings do not support a compound concept. A broad parent concept does not support a narrower facet: generic education does not support Higher Education; generic responsibility does not support Accountability; merely naming federal government does not support Federalism.
+- A conceptual paraphrase can support a facet without exact query words. Keyword presence alone cannot.
+- If not every required facet is supported, score at most 5. If "x" is true, score at most 3.
+- Evaluate the CONCEPTUAL relevance. A result discussing 'elections, voting, and parliament' is highly relevant (7-10) to the query 'Democracy', even if the specific word is missing. Do NOT penalize missing keywords if the underlying meaning aligns.
+- Distinguish an abstract concept from an incidental word or institution-name match. For example, 'Federalism' requires evidence about division/devolution of powers, provincial autonomy, resource sharing, or relations between levels of government; merely naming federal and provincial governments is not enough. 'Provincial Rights' requires provinces to be the holders of rights, autonomy, powers, resources, or a constitutional share; a passage about provinces withholding municipal powers concerns local-government rights, not provincial rights. 'Accountability' requires answerability, oversight, investigation, exposure of failure, or admission of errors; the isolated word responsibility is not enough. 'Local government system' requires evidence about municipal institutions, powers, elections, funding, or services; an unrelated utility complaint is not enough.
+- For an institutional query such as 'Parliament', require substantive evidence about the legislature, representation, law-making, parliamentary authority, debate, or accountability. Merely calling someone a 'parliamentarian' or mentioning a job/title is incidental and must score 0-3.
+- Judge only the supplied transcript passage. Do not infer relevance from the speaker or video title alone.
+- If query is "Bill Gates" but result is about Pakistan politics → score 0-1.
+- If query is about technology but result is about religion → score 0-2.
+- Evaluate the semantic meaning, not just keyword overlaps."""}, 
+                {"role": "user", "content": f"Search Query: {query}\nValidation Mode: {validation_mode}\n\nDocuments:\n{docs_text}"}
             ],
-            max_tokens=500,
+            max_tokens=1400,
             temperature=0.0,
             response_format={"type": "json_object"},
-            timeout=15.0  # Hard cap: return unranked results if reranking is too slow
-        )
+                timeout=15.0,
+            )
+        except Exception as primary_error:
+            # Retry once with a much smaller payload. The OpenAI SDK's implicit
+            # retries are disabled above so worst-case latency remains bounded.
+            retry_count = min(len(candidates), 12)
+            logger.warning(
+                f"LLM reranking primary attempt failed: {primary_error}; "
+                f"retrying with {retry_count} candidates"
+            )
+            candidates = candidates[:retry_count]
+            retry_docs = []
+            for i, r in enumerate(candidates):
+                text = r.get("text", "")[:200]
+                retry_docs.append(
+                    f"[{i}] Speaker: {r.get('speaker', '')} | "
+                    f"Title: {r.get('video_title', '')} | Text: {text}"
+                )
+            response = openai_client.with_options(max_retries=0).chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": """You are a multilingual transcript relevance judge. Return only the requested JSON. Define the minimum facets required by the complete query topic, then mark only facets explicitly or conceptually supported by each transcript passage. Speaker and title are not topic evidence. Relational topics require both the exact subject and relationship; compound concepts require their complete meaning. Keyword presence alone is insufficient. Use score 7-10 only when every required facet is supported, and x=true for incidental, title-only, passing, or disconnected-word matches."""},
+                    {"role": "user", "content": f"Search Query: {query}\nValidation Mode: {validation_mode}\nRequired output: {{\"facets\":[{{\"id\":\"f1\",\"d\":\"required meaning\"}}],\"scores\":[{{\"i\":0,\"s\":8,\"f\":[\"f1\"],\"x\":false}}]}}\n\nDocuments:\n" + "\n".join(retry_docs)},
+                ],
+                max_tokens=800,
+                temperature=0.0,
+                response_format={"type": "json_object"},
+                timeout=12.0,
+            )
         
         llm_result = json_module.loads(response.choices[0].message.content.strip())
         scores = llm_result.get("scores", [])
+        facet_items = llm_result.get("facets", [])
+        facet_descriptions = {}
+        if isinstance(facet_items, list):
+            for facet in facet_items:
+                if not isinstance(facet, dict):
+                    continue
+                facet_id = str(facet.get("id", "")).strip()
+                if facet_id:
+                    facet_descriptions[facet_id] = str(facet.get("d", "")).strip()
+        required_facet_ids = list(facet_descriptions.keys())
         
         # Build score map
-        score_map = {}
+        judgment_map = {}
         for item in scores:
             idx = item.get("i", item.get("index", -1))
             score = item.get("s", item.get("score", 5))
             if 0 <= idx < len(candidates):
-                score_map[idx] = score / 10.0  # Normalize to 0-1
+                complete_topic = item.get("c", item.get("complete", False))
+                incidental_match = item.get("x", item.get("incidental", True))
+                supported_facet_ids = item.get("f", item.get("supported_facets", []))
+                if not isinstance(supported_facet_ids, list):
+                    supported_facet_ids = []
+                supported_facet_ids = [str(facet).strip() for facet in supported_facet_ids]
+                if require_complete_topic:
+                    complete_topic = has_complete_facet_coverage(
+                        required_facet_ids,
+                        supported_facet_ids,
+                    )
+                judgment_map[idx] = {
+                    "score": score / 10.0,
+                    "complete": complete_topic is True,
+                    "incidental": incidental_match is not False,
+                    "required_facets": required_facet_ids,
+                    "supported_facets": supported_facet_ids,
+                }
         
         # Apply LLM scores
         reranked = []
         for i, r in enumerate(candidates):
             result_copy = r.copy()
-            llm_score = score_map.get(i, 0.3)  # Default to LOW score (0.3) if not scored
+            judgment = judgment_map.get(i, {
+                "score": 0.3,
+                "complete": False,
+                "incidental": True,
+                "required_facets": required_facet_ids,
+                "supported_facets": [],
+            })
+            llm_score = judgment["score"]
             
             # Combined score: LLM (60%) + original semantic (25%) + keyword/fuzzy (15%)
             # INCREASED LLM weight to 60% so strict LLM scores have more impact
             original_score = result_copy.get("score", 0)
             result_copy["llm_relevance_score"] = round(llm_score, 4)
+            result_copy["llm_complete_topic"] = judgment["complete"]
+            result_copy["llm_incidental_match"] = judgment["incidental"]
+            result_copy["llm_required_facets"] = judgment["required_facets"]
+            result_copy["llm_supported_facets"] = judgment["supported_facets"]
+            result_copy["llm_facet_descriptions"] = facet_descriptions
             result_copy["original_score"] = original_score
             result_copy["score"] = round(
                 llm_score * 0.60 + original_score * 0.25 + result_copy.get("fuzzy_score", 0) * 0.15,
@@ -1177,11 +1340,11 @@ Be VERY strict. Most results should get low scores if they don't match the query
             result_copy["match_types"].append("llm_reranked")
             reranked.append(result_copy)
         
-        # STRICTER filtering: LLM score < 0.3 (3/10) is considered irrelevant
-        # But ALWAYS keep title matches and exact phrase matches (these are verified matches)
+        # MODERATE filtering: LLM score < 0.15 is considered irrelevant
+        # ALWAYS keep title matches and exact phrase matches (these are verified matches)
         reranked = [
             r for r in reranked 
-            if r.get("llm_relevance_score", 0) >= 0.3 
+            if r.get("llm_relevance_score", 0) >= 0.15 
             or "title_match" in r.get("match_types", []) 
             or "exact_phrase_match" in r.get("match_types", [])
         ]
@@ -1201,11 +1364,32 @@ Be VERY strict. Most results should get low scores if they don't match the query
         low_relevance = sum(1 for r in reranked if 0.3 <= r.get("llm_relevance_score", 0) < 0.5)
         filtered_count = len(candidates) - len([r for r in reranked if r.get("llm_relevance_score")])
         
+        if require_complete_topic:
+            recovered = recover_empty_structured_rerank(
+                query,
+                reranked,
+                results,
+                top_k,
+            )
+            if recovered is not reranked:
+                logger.warning(
+                    f"Structured reranking produced no valid topic result; "
+                    f"precision fallback admitted {len(recovered)} candidates"
+                )
+            reranked = recovered
+
         logger.info(f"LLM reranking: {len(candidates)} candidates -> {len(reranked)} results (high={high_relevance}, med={med_relevance}, low={low_relevance}, filtered={filtered_count})")
         return reranked[:top_k]
         
     except Exception as e:
         logger.warning(f"LLM reranking error: {str(e)}")
+        if require_complete_topic:
+            fallback = build_structured_rerank_fallback(query, results, top_k)
+            logger.warning(
+                f"Structured reranking fallback admitted {len(fallback)} "
+                f"of {min(len(results), 30)} candidates"
+            )
+            return fallback
         return results[:top_k]
 
 
@@ -1636,9 +1820,10 @@ def fuzzy_word_match(word: str, text: str, threshold: int = 85) -> float:
         # Only compare against words of comparable length
         if len(text_word) < 2:
             continue
-        # For short words (<=5 chars), require length difference <= 1
-        # This prevents 'cleo'(4) matching 'ceo'(3), but allows 'sam'(3) matching 'sam'(3)
-        if len(word) <= 5 and abs(len(word) - len(text_word)) > 1:
+        # Protect against substring/superstring mismatches like 'national'(8) matching 'international'(13)
+        # Even if fuzz.ratio is 76%, they are fundamentally different words.
+        max_len_diff = 1 if len(word) <= 5 else max(2, len(word) // 3)
+        if abs(len(word) - len(text_word)) > max_len_diff:
             continue
         ratio = fuzz.ratio(word, text_word)
         if ratio >= effective_threshold and ratio > best_score:
@@ -1786,12 +1971,12 @@ def compute_retrieval_threshold(min_score: float, is_short_semantic_query: bool 
     """
     Shared retrieval threshold policy used by both /search and /search/incremental.
     """
-    threshold = max(min_score * 0.85, 0.35)
-    if is_alias_query:
-        return max(min_score * 0.55, 0.18)
-    if is_short_semantic_query:
-        return max(min_score * 0.60, 0.20)
-    return threshold
+    # Lower base threshold (0.05) for all queries. 
+    # Long conversational queries (like "speech on electric bill and load shedding")
+    # OR single-word conceptual queries (like "Federalism")
+    # have highly diluted vectors and struggle to hit 0.15 similarity.
+    # We rely on the LLM reranker and Keyword Search to filter out the irrelevant garbage anyway.
+    return max(min_score * 0.15, 0.05)
 
 
 def collect_short_query_lexical_evidence(short_terms: List[str], payload: Dict, fuzzy_threshold: int = 90) -> Dict:
@@ -2193,47 +2378,43 @@ def parse_search_query(query:  str) -> Dict:
     
     return parsed
     
-@app.post("/embed-video")
-async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify_api_key)):
-    """Embed video transcript segments. Requires API key if configured."""
+def process_video_task(data_dict: dict):
+    """Background worker task to process video embeddings and upsert to Qdrant."""
+    webhook_url = data_dict.get('webhook_url')
+    video_id = data_dict.get('video_id')
     try:
-        video_id = data.video_id
-        identification_segments = data.identification_segments
-        if not identification_segments:
-            raise HTTPException(status_code=400, detail="identification_segments is required")
+        identification_segments = data_dict.get('identification_segments', [])
+        video_title = data_dict.get('video_title', '')
+        video_filename = data_dict.get('video_filename', '')
+        youtube_url = data_dict.get('youtube_url', '')
+        language = data_dict.get('language', '')
         
-        video_title = data.video_title
-        video_filename = data.video_filename
-        youtube_url = data.youtube_url
-        language = data.language
+        video_created_at = data_dict.get('video_created_at') or ""
+        processing_status = data_dict.get('processing_status') or "completed"
+        approval_status = data_dict.get('approval_status') or "approved"
+        is_archived = data_dict.get('is_archived', False)
+        user_id = data_dict.get('user_id')
+        speakers_count = data_dict.get('speakers_count', 0)
+        audio_duration_seconds = data_dict.get('audio_duration_seconds', 0)
+        video_description = data_dict.get('video_description') or ""
+        video_summary = data_dict.get('video_summary') or ""
+        video_summary_english = data_dict.get('video_summary_english') or ""
+        video_summary_urdu = data_dict.get('video_summary_urdu') or ""
         
-        # Enriched metadata for dual-mode search (stored in Qdrant payload)
-        video_created_at = data.video_created_at or ""
-        processing_status = data.processing_status or "completed"
-        approval_status = data.approval_status or "approved"
-        is_archived = data.is_archived
-        user_id = data.user_id
-        speakers_count = data.speakers_count
-        audio_duration_seconds = data.audio_duration_seconds
-        video_description = data.video_description or ""
-        video_summary = data.video_summary or ""
-        video_summary_english = data.video_summary_english or ""
-        video_summary_urdu = data.video_summary_urdu or ""
+        logger.info(f"[WORKER] Processing video {video_id} with {len(identification_segments)} segments")
         
-        logger.info(f"Processing video {video_id} with {len(identification_segments)} segments")
-        
-        # Only delete existing embeddings on the FIRST batch (or if no batch info = single request)
         batch_number = 1
         total_batches = 1
-        if data.batch_info:
-            batch_number = data.batch_info.get("batch_number", 1)
-            total_batches = data.batch_info.get("total_batches", 1)
-            logger.info(f"Batch {batch_number}/{total_batches} for video {video_id}")
+        batch_info = data_dict.get('batch_info')
+        if batch_info:
+            batch_number = batch_info.get("batch_number", 1)
+            total_batches = batch_info.get("total_batches", 1)
+            logger.info(f"[WORKER] Batch {batch_number}/{total_batches} for video {video_id}")
         
         if batch_number == 1:
             delete_existing_embeddings(video_id)
         else:
-            logger.info(f"Skipping delete for batch {batch_number} (only delete on batch 1)")
+            logger.info(f"[WORKER] Skipping delete for batch {batch_number} (only delete on batch 1)")
         
         points = []
         segments_embedded = 0
@@ -2242,10 +2423,7 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
         segment_metadata = []
         
         for idx, segment in enumerate(identification_segments):
-            # Use segment_index from payload if provided (preserves global index across batches)
-            # Fall back to enumerate index for backward compatibility
             segment_index = segment.get("segment_index", idx)
-            
             speaker = segment.get("speaker", "UNKNOWN")
             text = segment.get("text", "")
             start_time = float(segment.get("start", 0))
@@ -2254,12 +2432,10 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
             match_type = segment.get("match", "")
             confidence = segment.get("confidence", 0)
             
-            if not text or len(text. strip()) < 3:
+            if not text or len(text.strip()) < 3:
                 segments_without_text += 1
                 continue
             
-            # BUILD ENRICHED EMBEDDING TEXT — includes speaker, title, language context
-            # This makes vector search find segments by speaker name and video context
             enriched_parts = []
             if speaker and speaker != "UNKNOWN":
                 enriched_parts.append(f"[Speaker: {speaker}]")
@@ -2271,15 +2447,14 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
             
             enriched_text = " ".join(enriched_parts)
             
-            # Truncate to max 6000 chars (~1500-2000 tokens) to stay under OpenAI limits
             if len(enriched_text) > 6000:
                 enriched_text = enriched_text[:6000] + "..."
                 logger.debug(f"Truncated segment {segment_index} from {len(text)} to 6000 chars")
             
             texts_to_embed.append(enriched_text)
             segment_metadata.append({
-                'idx': segment_index,  # Use global segment_index, not batch-local idx
-                'speaker':  speaker,
+                'idx': segment_index,
+                'speaker': speaker,
                 'diarization_speaker': diarization_speaker,
                 'match_type': match_type,
                 'start_time': start_time,
@@ -2289,30 +2464,24 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
                 'enriched_text': enriched_text
             })
         
-        if not texts_to_embed: 
-            raise HTTPException(
-                status_code=400,
-                detail=f"No valid segments found to embed.  Total:  {len(identification_segments)}, Without text: {segments_without_text}"
-            )
+        if not texts_to_embed:
+            raise ValueError(f"No valid segments found to embed. Total: {len(identification_segments)}, Without text: {segments_without_text}")
         
-        logger.info(f"Generating embeddings for {len(texts_to_embed)} segments in batch...")
+        logger.info(f"[WORKER] Generating embeddings for {len(texts_to_embed)} segments in batch...")
         batch_start_time = datetime.utcnow()
         
-        # Use OpenAI embeddings if enabled, otherwise use FastEmbed
         if USE_OPENAI_EMBEDDINGS and openai_client:
-            logger.info(f"Using OpenAI {OPENAI_EMBEDDING_MODEL} for batch embedding")
+            logger.info(f"[WORKER] Using OpenAI {OPENAI_EMBEDDING_MODEL} for batch embedding")
             vectors = get_openai_embeddings_batch(texts_to_embed)
         else:
-            logger.info("Using FastEmbed for batch embedding")
+            logger.info("[WORKER] Using FastEmbed for batch embedding")
             results_list = list(get_fastembed_model().embed(texts_to_embed))
             vectors = [r.tolist() if hasattr(r, 'tolist') else list(r) for r in results_list]
         
-        # GENERATE LLM ENGLISH SUMMARIES for non-English segments (bilingual bridge)
         summaries_en = {}
         if openai_client and language and language.lower() not in ["english", "en"]:
             try:
-                logger.info(f"Generating English summaries for {len(segment_metadata)} segments...")
-                # Process in batches of 20 for efficiency
+                logger.info(f"[WORKER] Generating English summaries for {len(segment_metadata)} segments...")
                 for batch_start in range(0, len(segment_metadata), 20):
                     batch_end = min(batch_start + 20, len(segment_metadata))
                     batch_texts = []
@@ -2330,7 +2499,6 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
                         temperature=0.1
                     )
                     
-                    # Parse summaries
                     for line in summary_response.choices[0].message.content.strip().split("\n"):
                         line = line.strip()
                         if line and "[" in line:
@@ -2340,21 +2508,18 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
                                 summaries_en[int(idx_str)] = summary_text
                             except (ValueError, IndexError):
                                 pass
-                
-                logger.info(f"Generated {len(summaries_en)} English summaries")
             except Exception as e:
-                logger.warning(f"Summary generation failed (non-critical): {str(e)}")
+                logger.warning(f"[WORKER] Summary generation failed (non-critical): {str(e)}")
         
         batch_end_time = datetime.utcnow()
         batch_duration = (batch_end_time - batch_start_time).total_seconds()
-        logger.info(f"Batch embedding completed in {batch_duration:.2f} seconds")
+        logger.info(f"[WORKER] Batch embedding completed in {batch_duration:.2f} seconds")
         
         for i, metadata in enumerate(segment_metadata):
             vector = vectors[i]
             id_string = f"video_{video_id}_seg_{metadata['idx']}"
             point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, id_string))
             
-            # Get English summary if available
             summary_en = summaries_en.get(metadata['idx'], "")
             
             payload = {
@@ -2366,17 +2531,16 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
                 "segment_index": metadata['idx'],
                 "speaker": metadata['speaker'],
                 "diarization_speaker": metadata['diarization_speaker'],
-                "match_type":  metadata['match_type'],
+                "match_type": metadata['match_type'],
                 "start_time": metadata['start_time'],
                 "end_time": metadata['end_time'],
                 "duration": metadata['end_time'] - metadata['start_time'],
                 "text": metadata['text'],
                 "text_length": len(metadata['text']),
                 "confidence": metadata['confidence'],
-                "summary_en": summary_en,  # English summary for cross-language search
-                "enriched_text": metadata.get('enriched_text', metadata['text']),  # context-rich text
+                "summary_en": summary_en,
+                "enriched_text": metadata.get('enriched_text', metadata['text']),
                 "created_at": datetime.utcnow().isoformat(),
-                # Enriched metadata for dual-mode search eligibility & filtering
                 "video_created_at": video_created_at,
                 "processing_status": processing_status,
                 "approval_status": approval_status,
@@ -2394,42 +2558,63 @@ async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify
             segments_embedded += 1
         
         if not points:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No valid segments found to embed. Total: {len(identification_segments)}, Without text: {segments_without_text}"
+            raise ValueError(f"No valid segments found to embed. Total: {len(identification_segments)}, Without text: {segments_without_text}")
+        
+        logger.info(f"[WORKER] Inserting {len(points)} points into Qdrant...")
+        
+        QDRANT_BATCH_SIZE = 150
+        for i in range(0, len(points), QDRANT_BATCH_SIZE):
+            sub_batch = points[i:i + QDRANT_BATCH_SIZE]
+            logger.info(f"[WORKER] Upserting Qdrant sub-batch {i // QDRANT_BATCH_SIZE + 1}: {len(sub_batch)} points")
+            qdrant_client.upsert(
+                collection_name=SEGMENTS_COLLECTION,
+                points=sub_batch,
+                wait=True
             )
+        logger.info(f"[WORKER] Successfully inserted {len(points)} points")
         
-        logger.info(f"Inserting {len(points)} points into Qdrant...")
-        
-        try:
-            # Sub-batch upsert to stay under Qdrant's 32MB payload limit
-            # Each point is ~70KB (3072-dim vector + payload), so 150 points ≈ 10MB (safe)
-            QDRANT_BATCH_SIZE = 150
-            for i in range(0, len(points), QDRANT_BATCH_SIZE):
-                sub_batch = points[i:i + QDRANT_BATCH_SIZE]
-                logger.info(f"Upserting Qdrant sub-batch {i // QDRANT_BATCH_SIZE + 1}: {len(sub_batch)} points")
-                qdrant_client.upsert(
-                    collection_name=SEGMENTS_COLLECTION,
-                    points=sub_batch,
-                    wait=True
-                )
-            logger.info(f"Successfully inserted {len(points)} points")
-        except Exception as e:
-            logger.info(f"ERROR:  Qdrant insertion failed: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Qdrant error: {str(e)}")
+        if webhook_url:
+            payload_success = {
+                "status": "completed",
+                "video_id": video_id,
+                "segments_embedded": segments_embedded,
+                "message": "Successfully indexed in Qdrant"
+            }
+            try:
+                requests.post(webhook_url, json=payload_success, timeout=10)
+                logger.info(f"[WORKER] Webhook success sent to {webhook_url}")
+            except Exception as we:
+                logger.error(f"[WORKER] Webhook failed: {str(we)}")
+                
+    except Exception as e:
+        logger.error(f"[WORKER] Error processing video {video_id}: {str(e)}")
+        if webhook_url:
+            payload_error = {
+                "status": "failed",
+                "video_id": video_id,
+                "error": str(e)
+            }
+            try:
+                requests.post(webhook_url, json=payload_error, timeout=10)
+            except Exception as we:
+                logger.error(f"[WORKER] Webhook error notification failed: {str(we)}")
+        raise e
+
+@app.post("/embed-video", status_code=202)
+async def embed_video(data: EmbedVideoRequest, authorized: bool = Depends(verify_api_key)):
+    """Enqueue video transcript embedding task. Requires API key if configured."""
+    try:
+        data_dict = data.model_dump()
+        job = task_queue.enqueue('embeddings_test.process_video_task', data_dict, job_timeout='1h')
         
         return {
-            "success": True,
-            "video_id": video_id,
-            "collection":  SEGMENTS_COLLECTION,
-            "segments_embedded": segments_embedded,
-            "total_points_inserted": len(points),
-            "embedding_time_seconds": round(batch_duration, 2),
-            "message": f"Successfully embedded {segments_embedded} segments for video {video_id}"
+            "status": "queued",
+            "video_id": data.video_id,
+            "job_id": job.id,
+            "message": "Video is processing in the background"
         }
-        
     except Exception as e:
-        logger.info(f"Error in embed_video: {str(e)}")
+        logger.error(f"Error enqueueing task: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def delete_existing_embeddings(video_id: int):
@@ -3146,10 +3331,8 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                 
                 if not search_words_normalized:
                     if skipped_words:
-                        raise HTTPException(
-                            status_code=400, 
-                            detail=f"Your search only contains common words that are too broad to search: {', '.join(skipped_words[:3])}. Please add more specific terms."
-                        )
+                        # If the entire query consists of stop words, use them instead of failing
+                        search_words_normalized = list(dict.fromkeys([normalize_word(w) for w in skipped_words if normalize_word(w)]))
                     else:
                         raise HTTPException(
                             status_code=400, 
@@ -3474,14 +3657,11 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             alias_speaker_variants = data_p["speaker_variants"]
             alias_extra_keywords = [data_p["canonical"]] + data_p["speaker_variants"][:3]
             logger.info(f"Alias detected in query '{query_text[:40]}' → expanding to person '{data_p['canonical']}'")
-            # Inject canonical name into query and words list
+            # Set canonical name into query if missing, but do NOT inject into words array
+            # Injecting multi-word phrases into `words` inflates `total_words` and breaks keyword math.
             canonical = data_p["canonical"]
             if canonical.lower() not in query_text.lower():
                 query_text = f"{query_text} {canonical}"
-            for term in alias_extra_keywords:
-                tw = term.strip()
-                if tw and tw.lower() not in [w.lower() for w in words]:
-                    words.append(tw)
 
     # 3. If no full-phrase match, do single-word check on query words
     # e.g. query "hafiz speech" triggers alias even if full phrase doesn't match
@@ -3508,6 +3688,44 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
     use_query_expansion = os.getenv("USE_QUERY_EXPANSION", "true").lower() == "true"
     use_reranking = os.getenv("USE_RERANKING", "true").lower() == "true"
     use_llm_understanding = os.getenv("USE_LLM_UNDERSTANDING", "true").lower() == "true"
+    decomposition_mode = (
+        data.query_decomposition_mode
+        or os.getenv("SEMANTIC_QUERY_DECOMPOSITION_MODE", "off")
+    ).strip().lower()
+    if decomposition_mode not in {"off", "shadow", "on"}:
+        logger.warning(
+            "Unknown SEMANTIC_QUERY_DECOMPOSITION_MODE=%r; defaulting to off",
+            decomposition_mode,
+        )
+        decomposition_mode = "off"
+
+    canonical_speaker = (
+        PERSON_ALIASES[alias_person_key]["canonical"]
+        if alias_person_key
+        else None
+    )
+    query_decomposition = decompose_semantic_query(raw_query_text, canonical_speaker)
+    if decomposition_mode in {"shadow", "on"}:
+        logger.info(
+            "[QUERY DECOMPOSITION] mode=%s decomposed=%s speaker=%r topic=%r original=%r",
+            decomposition_mode,
+            query_decomposition.get("decomposed"),
+            query_decomposition.get("speaker"),
+            query_decomposition.get("topic"),
+            raw_query_text[:120],
+        )
+
+    if decomposition_mode == "on" and query_decomposition.get("decomposed"):
+        query_text = str(query_decomposition["retrieval_query"])
+        speaker_filter = str(query_decomposition["speaker"])
+        logger.info(
+            "[QUERY DECOMPOSITION] active retrieval_query=%r speaker_filter=%r",
+            query_text,
+            speaker_filter,
+        )
+    structured_speaker_topic_search = bool(
+        decomposition_mode == "on" and query_decomposition.get("decomposed")
+    )
     query_source_for_length = raw_query_text or query_text or ""
     query_shape = classify_query_shape(query_source_for_length, search_mode=search_mode, alias_person_key=alias_person_key)
     query_word_count_for_strategy = int(query_shape.get("token_count", 0))
@@ -3691,7 +3909,12 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
     #    - Segments BY that speaker (speaker field match)
     #    - Segments MENTIONING that speaker (transcript content match via semantic search)
     speaker_only_search = speaker_filter and not query_text and not words
-    speaker_parallel_search = speaker_filter and query_text  # Run speaker search in parallel with semantic
+    # A decomposed speaker+topic query uses the speaker as a constraint on topic
+    # retrieval. It must not add arbitrary passages merely because that person
+    # spoke them.
+    speaker_parallel_search = bool(
+        speaker_filter and query_text and not structured_speaker_topic_search
+    )
     
     if use_scan_strategies and (speaker_only_search or speaker_parallel_search):
         try:
@@ -3765,6 +3988,9 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                     speaker_combined = f"{spk} {diar_spk}".strip()
                     video_title = payload.get("video_title", "")
                     text = payload.get("text", "")
+
+                    if structured_speaker_topic_search and not has_minimum_topic_evidence(text):
+                        continue
                     
                     # Fuzzy match speaker name against speaker fields
                     if not fuzzy_match_speaker(speaker_filter, speaker_combined, threshold=70):
@@ -3994,7 +4220,7 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                 sem_search_response = qdrant_client.query_points(
                     collection_name=SEGMENTS_COLLECTION,
                     query=query_vector,
-                    limit=top_k * 2 if idx == 0 else top_k,  # Reduced from 3x for speed
+                    limit=top_k * 3 if idx == 0 else top_k * 2,  # Increased to pull more semantic candidates
                     score_threshold=retrieval_threshold,  # Lower threshold — filter later
                     query_filter=search_filter,
                     with_payload=True,
@@ -4020,6 +4246,9 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                     speaker = payload.get("speaker", "")
                     diarization_speaker = payload.get("diarization_speaker", "")
                     text = payload.get("text", "")
+
+                    if structured_speaker_topic_search and not has_minimum_topic_evidence(text):
+                        continue
                     
                     # ELASTIC title filter with fuzzy matching
                     if title_filter:
@@ -4080,26 +4309,6 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                                     query_words_in_result = True
                                     break
                     
-                    # Apply query-presence penalty for SHORT queries (1-2 words)
-                    # Short queries are specific searches ("mufti", "drone", "bill gates") — user expects
-                    # the word to actually appear in results, not just be "semantically related"
-                    # EXCEPTION: Skip penalty for known person alias queries — we want ALL results about them
-                    query_word_count = len(query_text.split()) if query_text else 0
-                    presence_penalty = 0.0
-                    if is_person_alias_query:
-                        # Person alias queries: no presence penalty — semantic similarity is enough
-                        # We want to find ALL content related to this person even if their name
-                        # isn't literally in the transcript text
-                        pass
-                    elif query_word_count <= 2 and not query_words_in_result and not speaker_field_match:
-                        # STRONGER penalty: results that don't contain the actual search term
-                        # This prevents "bill gates" → "pakistan politics" false matches
-                        # Also prevents "mufti" → "qari mansoor jamat" false matches
-                        presence_penalty = 0.25  # Increased from 0.15 to 0.25
-                    elif 3 <= query_word_count <= 4 and not query_words_in_result and not speaker_field_match:
-                        # Medium queries (3-4 words): smaller penalty
-                        presence_penalty = 0.15
-
                     # Reward close lexical matches (including typo/near-word matches)
                     # so that words near the query get visible score lift.
                     lexical_closeness = 0.0
@@ -4116,19 +4325,16 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                     
                     combined_score = calculate_combined_score(base_score, False, fuzzy_boost)
                     if lexical_closeness > 0:
-                        combined_score += min(lexical_closeness * 0.12, 0.12)
-                    combined_score = max(combined_score - presence_penalty, 0.0)
+                        combined_score += min(lexical_closeness * 0.15, 0.15)
+                    # presence_penalty is completely removed to allow pure semantic matches
                     
                     # Results from expanded/translated query variations are lower confidence
                     # They are more likely to drift from user intent
                     if idx > 0:
                         combined_score *= 0.85  # 15% discount for non-original queries
                     
-                    # Apply min_score filter AFTER combined scoring
-                    if combined_score < min_score:
-                        continue
-                    
                     # Build match types list
+
                     match_types = ["semantic"]
                     if speaker_field_match:
                         match_types.append("speaker_field_match")
@@ -4184,13 +4390,25 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
     if query_terms_for_keyword and (len(query_terms_for_keyword) == 1 or (len(query_terms_for_keyword) <= 3 and len(search_words) < 2)):
         search_words.extend(query_terms_for_keyword)
     
-    # Clean up search words: normalize quotes/dashes, strip punctuation, remove too-short words and stop words
     search_words = sorted(set(
         normalize_word(w)
         for w in search_words
         if len(normalize_word(w)) >= 2 and normalize_word(w).lower() not in STOP_WORDS
     ))
-    logger.info(f"Keywords after stop word filtering: {len(search_words)} words")
+    
+    # If this is a person search, the speaker filter already handles finding the person.
+    # We must remove their name parts from search_words so that Keyword Search
+    # focuses entirely on the TOPIC (e.g., "Federalism") rather than giving 
+    # high scores to any random video just because it matches "Hafiz Naeem".
+    if is_person_alias_query and alias_person_key:
+        person_data = PERSON_ALIASES[alias_person_key]
+        alias_name_parts = set()
+        for variant in person_data["speaker_variants"] + [person_data["canonical"]]:
+            for part in variant.split():
+                alias_name_parts.add(normalize_word(part))
+        search_words = [w for w in search_words if w not in alias_name_parts]
+
+    logger.info(f"Keywords after stop word and alias filtering: {len(search_words)} words")
     
     # EXACT PHRASE MATCHING: Prepare the full original query for exact substring match
     # This ensures that when user searches for "before Windows 95, 1984" and that exact
@@ -4212,22 +4430,26 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
 
             scroll_filter = search_filter
 
-            # For single-word searches, pre-filter with Qdrant text index so matches are
-            # retrieved directly instead of relying on early scroll windows.
-            if len(words_lower) == 1:
-                kw = words_lower[0]
-                keyword_text_conditions = [
-                    FieldCondition(key="text", match=MatchText(text=kw)),
-                    FieldCondition(key="summary_en", match=MatchText(text=kw)),
-                    FieldCondition(key="video_title", match=MatchText(text=kw)),
-                    FieldCondition(key="speaker", match=MatchText(text=kw)),
-                    FieldCondition(key="diarization_speaker", match=MatchText(text=kw)),
-                ]
-                if search_filter and getattr(search_filter, "must", None):
-                    scroll_filter = Filter(must=list(search_filter.must), should=keyword_text_conditions)
-                else:
-                    scroll_filter = Filter(should=keyword_text_conditions)
-                logger.info(f"Keyword search using MatchText prefilter for single word: '{kw}'")
+            # Pre-filter with Qdrant text index so matches are retrieved directly
+            # instead of relying on early scroll windows, which fails for older videos.
+            if len(words_lower) >= 1:
+                keyword_text_conditions = []
+                for kw in words_lower:
+                    if len(kw) >= 3:  # Include 3-letter words like "dir", "hnr", "pti"
+                        keyword_text_conditions.extend([
+                            FieldCondition(key="text", match=MatchText(text=kw)),
+                            FieldCondition(key="summary_en", match=MatchText(text=kw)),
+                            FieldCondition(key="video_title", match=MatchText(text=kw)),
+                            FieldCondition(key="speaker", match=MatchText(text=kw)),
+                            FieldCondition(key="diarization_speaker", match=MatchText(text=kw)),
+                        ])
+                
+                if keyword_text_conditions:
+                    if search_filter and getattr(search_filter, "must", None):
+                        scroll_filter = Filter(must=list(search_filter.must), should=keyword_text_conditions)
+                    else:
+                        scroll_filter = Filter(should=keyword_text_conditions)
+                    logger.info(f"Keyword search using MatchText prefilter for {len(words_lower)} words")
 
             # Early termination when we have enough results
             target_results = max(top_k, 20)
@@ -4362,16 +4584,18 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                         continue
                     
                     # Flexible word matching: require a high proportion but not necessarily ALL words
-                    # For short queries (2-3 words): require ALL words
-                    # For medium queries (4-6 words): allow 1 missing word
-                    # For long queries (7+ words): require at least 75% of words
+                    # For short queries (1-2 words): require ALL words
+                    # For medium queries (3-4 words): allow 1 missing word
+                    # For long queries (5-6 words): allow 2 missing words
                     total_words = len(words_lower)
-                    if total_words <= 3:
+                    if total_words <= 2:
                         min_required = total_words  # ALL must match
-                    elif total_words <= 6:
+                    elif total_words <= 4:
                         min_required = total_words - 1  # Allow 1 miss
+                    elif total_words <= 6:
+                        min_required = total_words - 2  # Allow 2 misses
                     else:
-                        min_required = max(3, int(total_words * 0.75))  # 75% must match
+                        min_required = max(2, int(total_words * 0.6))  # 60% must match
                     
                     if matched_words_count < min_required:
                         continue
@@ -4507,10 +4731,24 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             max_scan_title = min(max_scanned, 50000)
             seen_titles = {}  # video_id -> video_title (to avoid re-checking same video)
             
+            # PRE-FILTER with MatchText to avoid scanning 50,000 irrelevant segments
+            title_text_conditions = []
+            for tq in title_queries:
+                for kw in tq.split():
+                    if len(kw) >= 3:
+                        title_text_conditions.append(FieldCondition(key="video_title", match=MatchText(text=kw)))
+            
+            active_title_filter = title_search_filter
+            if title_text_conditions:
+                if title_search_filter and getattr(title_search_filter, "must", None):
+                    active_title_filter = Filter(must=list(title_search_filter.must), should=title_text_conditions)
+                else:
+                    active_title_filter = Filter(should=title_text_conditions)
+                    
             while scanned < max_scan_title:
                 points, next_offset = qdrant_client.scroll(
                     collection_name=SEGMENTS_COLLECTION,
-                    scroll_filter=title_search_filter,  # Use title-specific filter (no language restriction for universal queries)
+                    scroll_filter=active_title_filter,  # Use title-specific filter with MatchText
                     limit=min(1000, max_scan_title - scanned),
                     offset=offset,
                     with_payload=True,
@@ -4735,6 +4973,39 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             r.setdefault("matched_terms", [])
             r.setdefault("is_multi_match", False)
             merged[r["id"]] = r
+
+    # Final conjunctive gate for decomposed speaker+topic searches. Individual
+    # retrieval legs (notably exact phrase and keyword fallbacks) intentionally
+    # have broad recall and may not apply speaker constraints themselves. Never
+    # allow those candidates to bypass the structured intent.
+    if structured_speaker_topic_search:
+        constrained_merged = {}
+        rejected_wrong_speaker = 0
+        rejected_weak_evidence = 0
+
+        for segment_id, segment in merged.items():
+            segment_speaker = f"{segment.get('speaker', '')} {segment.get('diarization_speaker', '')}".strip()
+            if not fuzzy_match_speaker(speaker_filter, segment_speaker, threshold=70):
+                rejected_wrong_speaker += 1
+                continue
+
+            if not has_minimum_topic_evidence(segment.get("text", "")):
+                rejected_weak_evidence += 1
+                continue
+
+            match_types = list(segment.get("match_types", []))
+            if "structured_speaker_topic" not in match_types:
+                match_types.append("structured_speaker_topic")
+            segment["match_types"] = match_types
+            constrained_merged[segment_id] = segment
+
+        logger.info(
+            "[STRUCTURED QUERY GATE] kept=%d rejected_wrong_speaker=%d rejected_weak_evidence=%d",
+            len(constrained_merged),
+            rejected_wrong_speaker,
+            rejected_weak_evidence,
+        )
+        merged = constrained_merged
     
     # Update is_multi_match flag based on combined matched_terms count
     # Also boost score for multi-match segments (multiple terms found in same segment)
@@ -4800,7 +5071,24 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
     has_high_confidence_results = any(r.get("score", 0) >= 0.8 for r in merged_list[:5])
     # Skip reranking for small top_k (incremental first-page requests use top_k=20)
     # Reranking 20 results with LLM adds 20-30s latency — not worth it for first page
-    should_rerank = use_reranking and query_text and len(query_text.split()) > 1 and len(merged_list) >= 15 and not has_high_confidence_results and top_k > 20
+    standard_should_rerank = (
+        use_reranking
+        and query_text
+        and len(query_text.split()) > 1
+        and len(merged_list) >= 15
+        and not has_high_confidence_results
+        and top_k > 20
+    )
+    # Structured speaker+topic searches require conceptual ranking even on the
+    # normal first page. Otherwise title/keyword score inflation can outrank
+    # passages that actually discuss the requested topic.
+    structured_should_rerank = bool(
+        structured_speaker_topic_search
+        and use_reranking
+        and query_text
+        and len(merged_list) >= 1
+    )
+    should_rerank = standard_should_rerank or structured_should_rerank
     
     if should_rerank:
         logger.info(f"Applying LLM reranking to {len(merged_list)} results...")
@@ -4814,7 +5102,17 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             if "exact_phrase_match" in r.get("match_types", []):
                 exact_phrase_scores[r["id"]] = r["score"]
         
-        merged_list = rerank_with_llm(query_text, merged_list, top_k=min(len(merged_list), top_k * 3))
+        rerank_query = (
+            str(query_decomposition.get("topic") or query_text)
+            if structured_speaker_topic_search
+            else query_text
+        )
+        merged_list = rerank_with_llm(
+            rerank_query,
+            merged_list,
+            top_k=min(len(merged_list), top_k * 3),
+            require_complete_topic=structured_speaker_topic_search,
+        )
         
         # Restore score floors for protected match types
         # Exact phrase matches should ALWAYS keep 0.99 score (they are confirmed transcript matches!)
@@ -4844,7 +5142,99 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             logger.info("LLM reranking returned no results")
     elif use_reranking and query_text:
         logger.info(f"Skipping LLM reranking (results={len(merged_list)}, high_confidence={has_high_confidence_results}) for speed")
+
+    if structured_speaker_topic_search and should_rerank:
+        pre_topic_floor_count = len(merged_list)
+        merged_list = [
+            result
+            for result in merged_list
+            if passes_structured_topic_validation(
+                result,
+                str(query_decomposition.get("topic") or query_text),
+            )
+        ]
+        logger.info(
+            "[STRUCTURED TOPIC FLOOR] kept=%d/%d minimum_llm_relevance=0.65 complete_topic=required incidental_match=rejected conceptual_guard=on",
+            len(merged_list),
+            pre_topic_floor_count,
+        )
     
+    # ═══════════════════════════════════════════════════════════════════════════
+    # FILLER-WORD RELEVANCE FILTER
+    # After retrieving all results, filter out semantic-only segments whose
+    # text/title contain NONE of the meaningful (non-stop) query words.
+    # This prevents results that only matched on filler words like "in", "to",
+    # "the" (English) or "hai", "ka", "ki", "ke" (Urdu) from polluting results.
+    # Keyword, title, speaker, and exact_phrase matches are ALWAYS kept.
+    # ═══════════════════════════════════════════════════════════════════════════
+    if raw_query_text and len(raw_query_text.split()) >= 2:
+        # 1) Remove known person aliases from the query so they don't count as "topic" words
+        topic_query = raw_query_text.lower()
+        for person_data in PERSON_ALIASES.values():
+            # Sort aliases by length descending so we remove longest phrases first
+            sorted_aliases = sorted(person_data.get("aliases", []), key=len, reverse=True)
+            for alias in sorted_aliases:
+                if alias in topic_query:
+                    # Replace with spaces to avoid concatenating adjacent words
+                    topic_query = topic_query.replace(alias, " ")
+        
+        # 2) Extract meaningful (non-stop) words from the remaining topic query
+        meaningful_query_words = [
+            normalize_word(w) for w in topic_query.split()
+            if len(normalize_word(w)) >= 2 and normalize_word(w).lower() not in STOP_WORDS
+        ]
+        
+        if meaningful_query_words:
+            pre_filter_count = len(merged_list)
+            filtered_merged = []
+            filler_only_removed = 0
+            
+            for r in merged_list:
+                match_types = r.get("match_types", [])
+                
+                # ALWAYS keep non-semantic matches (keyword, title, speaker, exact_phrase)
+                non_semantic_types = {"keyword", "title_match", "speaker", "exact_phrase_match",
+                                      "matched_in_video_title", "matched_in_speaker",
+                                      "matched_in_diarization_speaker", "matched_in_text"}
+                if any(mt in non_semantic_types or mt.startswith("matched_in_") for mt in match_types):
+                    filtered_merged.append(r)
+                    continue
+                
+                # For semantic-only results, check if text or title contain at least
+                # ONE meaningful query word (whole word or fuzzy)
+                text = normalize_for_matching(r.get("text", ""))
+                title = normalize_for_matching(r.get("video_title", ""))
+                combined = f"{text} {title}"
+                
+                has_meaningful_word = False
+                for mw in meaningful_query_words:
+                    if whole_word_match(mw, combined):
+                        has_meaningful_word = True
+                        break
+                    # Also try fuzzy for longer words (handles typos/transliterations)
+                    if len(mw) >= 4:
+                        if fuzzy_word_match(mw, combined, threshold=80) > 0:
+                            has_meaningful_word = True
+                            break
+                
+                if has_meaningful_word:
+                    filtered_merged.append(r)
+                else:
+                    filler_only_removed += 1
+            
+            if filler_only_removed > 0 and len(filtered_merged) >= 5:
+                merged_list = filtered_merged
+                logger.info(
+                    f"[FILLER FILTER] Removed {filler_only_removed} semantic-only results with no meaningful "
+                    f"query words (meaningful_words={meaningful_query_words[:5]}), "
+                    f"kept={len(merged_list)}/{pre_filter_count}"
+                )
+            elif filler_only_removed > 0:
+                logger.info(
+                    f"[FILLER FILTER] Would remove {filler_only_removed} results but only {len(filtered_merged)} "
+                    f"would remain; keeping all to avoid empty results"
+                )
+
     # Group by video and collect ALL matching segments per video
     # CONSOLIDATE adjacent/overlapping segments into full segments
     # This prevents showing chunks of the same segment multiple times
@@ -4955,14 +5345,39 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             return 1
         return 0
     
-    consolidated_segments.sort(
-        key=lambda x: (
-            consolidated_priority(x),
-            x.get("score", 0),
-            -x.get("start_time", 0)
-        ),
+    # Group segments by video to find the best segment for each video
+    # This ensures that segments from the same video are kept contiguous in the final list,
+    # preventing them from being split across pagination batches.
+    video_groups = {}
+    for seg in consolidated_segments:
+        vid = seg.get("video_id")
+        seg_key = (
+            consolidated_priority(seg),
+            seg.get("score", 0),
+            -seg.get("start_time", 0)
+        )
+        
+        if vid not in video_groups:
+            video_groups[vid] = {"best_key": seg_key, "segments": []}
+        else:
+            if seg_key > video_groups[vid]["best_key"]:
+                video_groups[vid]["best_key"] = seg_key
+                
+        video_groups[vid]["segments"].append(seg)
+
+    # Sort video groups by their highest scoring segment's key
+    sorted_video_groups = sorted(
+        video_groups.values(),
+        key=lambda x: x["best_key"],
         reverse=True
     )
+
+    # Flatten back into consolidated_segments while keeping segments for the same video adjacent
+    consolidated_segments = []
+    for vg in sorted_video_groups:
+        # Sort segments within a video by start_time so they appear in chronological order
+        vg_segments = sorted(vg["segments"], key=lambda x: x.get("start_time", 0))
+        consolidated_segments.extend(vg_segments)
     
     # Log exact phrase and title matches for debugging
     exact_phrase_count = sum(1 for s in consolidated_segments if "exact_phrase_match" in s.get("match_types", []))
@@ -4994,7 +5409,7 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             if not relevance_check["is_relevant"]:
                 logger.warning(f"Query '{query_text[:50]}' returned no relevant results. Max relevance: {relevance_check['max_relevance']:.2f}. Reason: {relevance_check['explanation']}")
                 return {
-                    "query": query_text,
+                    "query": raw_query_text or query_text,
                     "words": words,
                     "speaker_filter": speaker_filter,
                     "collection": SEGMENTS_COLLECTION,
@@ -5019,6 +5434,7 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                         "max_relevance": relevance_check["max_relevance"],
                         "explanation": relevance_check["explanation"]
                     },
+                    "query_decomposition": query_decomposition,
                     "results": [],
                     "message": f"No relevant results found for '{query_text}'. The database may not contain content about this topic."
                 }
@@ -5042,7 +5458,7 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
     logger.info(f"Search completed: {len(speaker_results)} speaker + {len(semantic_results)} semantic + {len(keyword_results)} keyword + {len(title_results)} title = {len(final_results)} merged results from {len(videos_seen)} videos (consolidated from {len(merged_list)} raw matches)")
 
     return {
-        "query": query_text,
+        "query": raw_query_text or query_text,
         "words":  words,
         "speaker_filter": speaker_filter,
         "collection":  SEGMENTS_COLLECTION,
@@ -5061,6 +5477,7 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
             "time_range": time_range,
             "min_score": min_score,
         },
+        "query_decomposition": query_decomposition if decomposition_mode != "off" else None,
         "results": [
             {
                 "id": r["id"],
@@ -5088,6 +5505,23 @@ async def search(data: SearchRequest, authorized: bool = Depends(verify_api_key)
                 "language": r.get("language", ""),
                 "created_at": r.get("created_at"),
                 "llm_relevance_score": r.get("llm_relevance_score"),
+                "llm_complete_topic": r.get("llm_complete_topic"),
+                "llm_incidental_match": r.get("llm_incidental_match"),
+                "llm_required_facets": r.get("llm_required_facets", []),
+                "llm_supported_facets": r.get("llm_supported_facets", []),
+                "relevance_confidence": round(
+                    r.get("llm_relevance_score")
+                    if r.get("llm_relevance_score") is not None
+                    else r.get("score", 0),
+                    4,
+                ),
+                "intent_match": bool(
+                    not structured_speaker_topic_search
+                    or (
+                        r.get("llm_complete_topic") is True
+                        and r.get("llm_incidental_match") is False
+                    )
+                ),
                 "youtube_url_timestamped": f"{r.get('youtube_url', '')}?t={int(r.get('start_time', 0))}" if r.get('youtube_url') else ""
             }
             for r in final_results
@@ -5236,19 +5670,22 @@ async def search_incremental(data: IncrementalSearchRequest, authorized: bool = 
     _is_numeric_incremental = bool(initial_query_shape.get("is_numeric_query"))
     _is_short_semantic_incremental = bool(initial_query_shape.get("is_short_semantic_query"))
 
-    incremental_allow_delegation = os.getenv("INCREMENTAL_ALLOW_DELEGATION", "false").lower() == "true"
+    # ALWAYS delegate to full /search so keyword & title matching are never skipped.
+    # The fast path (single vector query) misses keyword/title matches for ALL queries.
+    if _is_numeric_incremental:
+        route_reason = "numeric_simple_text"
+    elif _is_short_semantic_incremental:
+        route_reason = "single_word_semantic_keyword" if query_word_count_incremental == 1 else "short_semantic_keyword"
+    else:
+        route_reason = "full_search_delegation"
+    logger.info(f"[INCREMENTAL AUTO-ROUTE] Query '{query_text[:80]}' → delegating to full search ({route_reason})")
 
-    if incremental_allow_delegation and (_is_numeric_incremental or _is_short_semantic_incremental):
-        route_reason = "numeric_simple_text" if _is_numeric_incremental else (
-            "single_word_semantic_keyword" if query_word_count_incremental == 1 else "short_semantic_keyword"
-        )
-        logger.info(f"[INCREMENTAL AUTO-ROUTE] Query '{query_text[:80]}' → delegating to full search ({route_reason})")
-
+    if True:
         delegate_top_k = max(data.top_k or 200, 200)
-        if _is_short_semantic_incremental:
-            delegate_top_k = min(delegate_top_k, 600)
-        elif _is_numeric_incremental:
+        if _is_numeric_incremental:
             delegate_top_k = min(delegate_top_k, 400)
+        else:
+            delegate_top_k = min(delegate_top_k, 600)
 
         delegate_req = SearchRequest(
             query=query_text,
@@ -5265,6 +5702,7 @@ async def search_incremental(data: IncrementalSearchRequest, authorized: bool = 
             filter_type="text" if _is_numeric_incremental else data.filter_type,
             filter_year=data.filter_year,
             filter_month=data.filter_month,
+            query_decomposition_mode=data.query_decomposition_mode,
             filter_date=data.filter_date,
         )
 
@@ -5333,11 +5771,6 @@ async def search_incremental(data: IncrementalSearchRequest, authorized: bool = 
                 "qdrant_queries": 0
             }
         }
-    elif _is_numeric_incremental or _is_short_semantic_incremental:
-        logger.info(
-            f"[INCREMENTAL FAST] Auto-delegation disabled; staying on one-query fast path "
-            f"(numeric={_is_numeric_incremental}, short_query={_is_short_semantic_incremental})"
-        )
 
     # Person alias support (fast-path safe): expand short aliases to canonical name once.
     # This improves semantic recall for queries like "hnr" without adding extra queries.
@@ -5378,8 +5811,9 @@ async def search_incremental(data: IncrementalSearchRequest, authorized: bool = 
     if alias_person_key:
         initial_top_k = max(initial_top_k, 300)
     # Caller (PHP) can override initial_top_k by sending top_k explicitly.
+    # We multiply by 2 to fetch a broader set of semantic candidates before reranking.
     if data.top_k is not None:
-        initial_top_k = max(initial_top_k, data.top_k)
+        initial_top_k = max(initial_top_k, data.top_k * 2)
     # Hard cap: keep bounded for latency; short queries still get enough candidates.
     initial_top_k = min(initial_top_k, 600)
 
@@ -6250,6 +6684,11 @@ async def delete_video_embeddings(video_id: int, authorized: bool = Depends(veri
         logger.error(f"Error deleting embeddings: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+from typing import List
+
+class CleanupOrphanVideosRequest(BaseModel):
+    valid_video_ids: List[int] = Field(..., description="List of valid video IDs that exist in MySQL")
+
 class UpdatePayloadRequest(BaseModel):
     video_id: int = Field(..., gt=0, description="Video ID to update")
     video_title: Optional[str] = Field(default=None, max_length=500)
@@ -6267,6 +6706,40 @@ class UpdatePayloadRequest(BaseModel):
     video_summary: Optional[str] = Field(default=None, max_length=10000)
     video_summary_english: Optional[str] = Field(default=None, max_length=10000)
     video_summary_urdu: Optional[str] = Field(default=None, max_length=10000)
+
+
+@app.post("/cleanup-orphan-videos")
+async def cleanup_orphan_videos(request: CleanupOrphanVideosRequest, authorized: bool = Depends(verify_api_key)):
+    """Delete all embeddings for videos that are NOT in the provided valid_video_ids list."""
+    try:
+        valid_ids = request.valid_video_ids
+        if not valid_ids:
+            raise HTTPException(status_code=400, detail="Must provide at least one valid video ID")
+            
+        delete_filter = Filter(
+            must_not=[
+                FieldCondition(
+                    key="video_id",
+                    match=MatchAny(any=valid_ids)
+                )
+            ]
+        )
+        
+        result = qdrant_client.delete(
+            collection_name=SEGMENTS_COLLECTION,
+            points_selector=delete_filter
+        )
+        
+        logger.info(f"Triggered orphan videos cleanup. Valid IDs provided: {len(valid_ids)}. Status: {result.status}")
+        
+        return {
+            "success": True,
+            "message": f"Issued delete command for orphan videos. Protected {len(valid_ids)} valid videos.",
+            "status": result.status
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning up orphan videos: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/update-video-payload")
