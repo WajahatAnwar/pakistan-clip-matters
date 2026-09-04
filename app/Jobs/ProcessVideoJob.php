@@ -481,9 +481,6 @@ class ProcessVideoJob implements ShouldQueue
                     'expected_languages' => ['ur', 'en'], // Force detection to pick ONLY between Urdu and English
                     'fallback_language' => 'ur' // Default to Urdu if unsure (e.g., Arabic intro is confusing)
                 ],
-                'summarization' => true,
-                'summary_model' => 'conversational', 
-                'summary_type' => 'bullets',
             ]);
 
             $transcriptId = $transcriptData['id'];

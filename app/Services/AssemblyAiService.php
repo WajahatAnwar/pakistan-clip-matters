@@ -20,7 +20,15 @@ class AssemblyAiService
 
     public function uploadAudio($audioPath)
     {
+        if (empty($this->apiKey)) {
+            throw new \RuntimeException('AssemblyAI API key is not configured.');
+        }
+
         $audioData = fopen($audioPath, 'r');
+        if ($audioData === false) {
+            throw new \RuntimeException("Unable to open audio file for AssemblyAI upload: {$audioPath}");
+        }
+
         $response = Http::timeout(300) // 5 minutes for large files
             ->withOptions([
                 'verify' => false, // Disable SSL verification for local development
@@ -33,7 +41,21 @@ class AssemblyAiService
             ->withBody(stream_get_contents($audioData), 'application/octet-stream')
             ->post('https://api.assemblyai.com/v2/upload');
         fclose($audioData);
-        return $response->json()['upload_url'] ?? null;
+
+        $data = $response->json();
+        if (!$response->successful() || empty($data['upload_url'])) {
+            Log::error('AssemblyAI audio upload failed', [
+                'status_code' => $response->status(),
+                'error' => $data['error'] ?? $data['message'] ?? $response->body(),
+            ]);
+
+            throw new \RuntimeException(
+                'AssemblyAI audio upload failed: ' .
+                ($data['error'] ?? $data['message'] ?? "HTTP {$response->status()}")
+            );
+        }
+
+        return $data['upload_url'];
     }
 
     /**
@@ -337,13 +359,19 @@ class AssemblyAiService
 
     public function requestTranscript($audioUrl, $options = [])
     {
+        if (empty($this->apiKey)) {
+            throw new \RuntimeException('AssemblyAI API key is not configured.');
+        }
+
+        if (empty($audioUrl)) {
+            throw new \InvalidArgumentException('AssemblyAI audio URL is missing.');
+        }
+
         $default = [
             'audio_url' => $audioUrl,
             'speaker_labels' => true,
             'language_detection' => true,
-            'summarization' => true,
-            'summary_model' => 'informative',
-            'summary_type' => 'bullets',
+            'speech_models' => ['universal-2'],
         ];
         $payload = array_merge($default, $options);
         $response = Http::timeout(60)
@@ -356,7 +384,21 @@ class AssemblyAiService
                 'content-type' => 'application/json',
             ])
             ->post('https://api.assemblyai.com/v2/transcript', $payload);
-        return $response->json();
+
+        $data = $response->json();
+        if (!$response->successful() || empty($data['id'])) {
+            Log::error('AssemblyAI transcript request failed', [
+                'status_code' => $response->status(),
+                'error' => $data['error'] ?? $data['message'] ?? $response->body(),
+            ]);
+
+            throw new \RuntimeException(
+                'AssemblyAI transcript request failed: ' .
+                ($data['error'] ?? $data['message'] ?? "HTTP {$response->status()}")
+            );
+        }
+
+        return $data;
     }
 
     public function getTranscript($transcriptId)
@@ -369,7 +411,21 @@ class AssemblyAiService
             ->withHeaders([
             'authorization' => $this->apiKey,
         ])->get("https://api.assemblyai.com/v2/transcript/{$transcriptId}");
-        return $response->json();
+        $data = $response->json();
+        if (!$response->successful()) {
+            Log::error('AssemblyAI transcript status request failed', [
+                'transcript_id' => $transcriptId,
+                'status_code' => $response->status(),
+                'error' => $data['error'] ?? $data['message'] ?? $response->body(),
+            ]);
+
+            throw new \RuntimeException(
+                'AssemblyAI transcript status request failed: ' .
+                ($data['error'] ?? $data['message'] ?? "HTTP {$response->status()}")
+            );
+        }
+
+        return $data;
     }
 
     public function pollTranscript($transcriptId, $interval = 5, $maxAttempts = 60)
@@ -377,10 +433,13 @@ class AssemblyAiService
         $attempts = 0;
         while ($attempts < $maxAttempts) {
             $data = $this->getTranscript($transcriptId);
-            if ($data['status'] === 'completed') {
+            $status = $data['status'] ?? null;
+            if ($status === 'completed') {
                 return $data;
-            } elseif ($data['status'] === 'error') {
-                throw new \Exception('Transcription failed:' . ($data['error'] ?? 'Unknown error'));
+            } elseif ($status === 'error') {
+                throw new \RuntimeException('Transcription failed: ' . ($data['error'] ?? 'Unknown error'));
+            } elseif ($status === null) {
+                throw new \RuntimeException('AssemblyAI transcript response is missing its status.');
             }
             sleep($interval);
             $attempts++;
