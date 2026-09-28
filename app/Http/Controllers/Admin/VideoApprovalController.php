@@ -3,11 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Video;
 use App\Jobs\ProcessVideoJob;
+use App\Models\Video;
 use App\Services\DropboxService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
@@ -19,7 +20,7 @@ class VideoApprovalController extends Controller
     public function index()
     {
         $user = Auth::user();
-        
+
         // All admin roles (superAdmin, admin, manager) can view archived tab
         // Only superAdmin and admin can manage (interact with) videos
         return Inertia::render('AdminSide/VideoApproval/index', [
@@ -95,8 +96,8 @@ class VideoApprovalController extends Controller
             case 'pending':
             default:
                 $query->where('is_archived', false)
-                      ->where('approval_status', 'pending')
-                      ->where('processing_status', '!=', 'failed');
+                    ->where('approval_status', 'pending')
+                    ->where('processing_status', '!=', 'failed');
                 break;
         }
 
@@ -143,36 +144,38 @@ class VideoApprovalController extends Controller
             'video_id' => $video->id,
             'title' => $video->title,
             'dropbox_path' => $video->dropbox_path,
-            'user_id' => $user->id
+            'user_id' => $user->id,
         ]);
 
         // Check if video has a dropbox path
-        if (!$video->dropbox_path) {
+        if (! $video->dropbox_path) {
             Log::warning('Video has no Dropbox path', ['video_id' => $video->id]);
+
             return response()->json(['error' => 'Video does not have a Dropbox path'], 404);
         }
 
         try {
             $dropboxService = new DropboxService($user);
-            
+
             Log::info('Calling Dropbox getTemporaryLink', [
                 'video_id' => $video->id,
-                'path' => $video->dropbox_path
+                'path' => $video->dropbox_path,
             ]);
-            
+
             $temporaryLink = $dropboxService->getTemporaryLink($video->dropbox_path);
 
-            if (!$temporaryLink) {
+            if (! $temporaryLink) {
                 Log::error('Dropbox returned null/empty link', [
                     'video_id' => $video->id,
-                    'path' => $video->dropbox_path
+                    'path' => $video->dropbox_path,
                 ]);
+
                 return response()->json(['error' => 'Failed to generate preview link - Dropbox returned no link'], 500);
             }
 
             Log::info('Preview link generated successfully', [
                 'video_id' => $video->id,
-                'link_length' => strlen($temporaryLink)
+                'link_length' => strlen($temporaryLink),
             ]);
 
             // Also get the shared link for viewing in Dropbox's web player
@@ -181,12 +184,12 @@ class VideoApprovalController extends Controller
                 $dropboxPreviewUrl = $dropboxService->getSharedLink($video->dropbox_path);
                 Log::info('Dropbox shared link generated', [
                     'video_id' => $video->id,
-                    'has_shared_link' => !empty($dropboxPreviewUrl)
+                    'has_shared_link' => ! empty($dropboxPreviewUrl),
                 ]);
             } catch (\Exception $e) {
                 Log::warning('Failed to get Dropbox shared link, continuing without it', [
                     'video_id' => $video->id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
 
@@ -196,7 +199,7 @@ class VideoApprovalController extends Controller
                 'video_id' => $video->id,
                 'title' => $video->title,
                 'dropbox_path' => $video->dropbox_path,
-                'expires_in' => '4 hours' // Dropbox temp links expire after 4 hours
+                'expires_in' => '4 hours', // Dropbox temp links expire after 4 hours
             ]);
 
         } catch (\Exception $e) {
@@ -204,10 +207,10 @@ class VideoApprovalController extends Controller
                 'video_id' => $video->id,
                 'dropbox_path' => $video->dropbox_path,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
-            return response()->json(['error' => 'Failed to generate preview link: ' . $e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to generate preview link: '.$e->getMessage()], 500);
         }
     }
 
@@ -220,7 +223,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -229,7 +232,7 @@ class VideoApprovalController extends Controller
         // Dispatch processing job if video hasn't been fully processed
         // Skip dispatching if the video is marked as a failed video with no audio
         $isFailedWithNoAudio = $video->processing_status === 'failed' && $video->has_audio === false;
-        if ($video->processing_status !== 'completed' && !$isFailedWithNoAudio) {
+        if ($video->processing_status !== 'completed' && ! $isFailedWithNoAudio) {
             try {
                 ProcessVideoJob::dispatch(
                     $video->user_id,
@@ -241,12 +244,12 @@ class VideoApprovalController extends Controller
 
                 Log::info('Video processing dispatched after approval', [
                     'video_id' => $video->id,
-                    'approved_by' => $user->id
+                    'approved_by' => $user->id,
                 ]);
             } catch (\Exception $e) {
                 Log::error('Failed to dispatch video processing after approval', [
                     'video_id' => $video->id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -266,7 +269,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -288,7 +291,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -309,7 +312,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -330,7 +333,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -351,7 +354,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -363,7 +366,7 @@ class VideoApprovalController extends Controller
 
         // Filter out archived videos for non-superAdmin
         $query = Video::whereIn('id', $videoIds);
-        if (!$user->hasRole('superAdmin')) {
+        if (! $user->hasRole('superAdmin')) {
             $query->where('is_archived', false);
         }
 
@@ -385,7 +388,7 @@ class VideoApprovalController extends Controller
             // Dispatch processing job if video hasn't been fully processed
             // Skip dispatching if the video is marked as a failed video with no audio
             $isFailedWithNoAudio = $video->processing_status === 'failed' && $video->has_audio === false;
-            if ($video->processing_status !== 'completed' && !$isFailedWithNoAudio) {
+            if ($video->processing_status !== 'completed' && ! $isFailedWithNoAudio) {
                 try {
                     ProcessVideoJob::dispatch(
                         $video->user_id,
@@ -398,12 +401,12 @@ class VideoApprovalController extends Controller
 
                     Log::info('Video processing dispatched after bulk approval', [
                         'video_id' => $video->id,
-                        'approved_by' => $user->id
+                        'approved_by' => $user->id,
                     ]);
                 } catch (\Exception $e) {
                     Log::error('Failed to dispatch video processing after bulk approval', [
                         'video_id' => $video->id,
-                        'error' => $e->getMessage()
+                        'error' => $e->getMessage(),
                     ]);
                 }
             }
@@ -425,7 +428,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -437,7 +440,7 @@ class VideoApprovalController extends Controller
 
         // Filter out archived videos for non-superAdmin
         $query = Video::whereIn('id', $videoIds);
-        if (!$user->hasRole('superAdmin')) {
+        if (! $user->hasRole('superAdmin')) {
             $query->where('is_archived', false);
         }
 
@@ -463,7 +466,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -494,7 +497,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -526,7 +529,7 @@ class VideoApprovalController extends Controller
         $user = Auth::user();
 
         // Check if user has permission to manage video approvals
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized. Only admins can manage video approvals.'], 403);
         }
 
@@ -537,7 +540,7 @@ class VideoApprovalController extends Controller
 
         $videoIds = $request->video_ids;
         $videos = Video::whereIn('id', $videoIds)->get();
-        
+
         $count = 0;
         foreach ($videos as $video) {
             $video->resetApproval();
@@ -556,7 +559,7 @@ class VideoApprovalController extends Controller
     public function updateAudioStatus(Request $request, Video $video)
     {
         $user = Auth::user();
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized.'], 403);
         }
 
@@ -580,7 +583,7 @@ class VideoApprovalController extends Controller
     public function getTags(Request $request, Video $video)
     {
         $user = Auth::user();
-        if (!$user->hasAnyRole(['superAdmin', 'admin', 'manager'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin', 'manager'])) {
             return response()->json(['error' => 'Unauthorized.'], 403);
         }
 
@@ -595,7 +598,7 @@ class VideoApprovalController extends Controller
     public function saveTags(Request $request, Video $video)
     {
         $user = Auth::user();
-        if (!$user->hasAnyRole(['superAdmin', 'admin'])) {
+        if (! $user->hasAnyRole(['superAdmin', 'admin'])) {
             return response()->json(['error' => 'Unauthorized.'], 403);
         }
 
@@ -606,20 +609,21 @@ class VideoApprovalController extends Controller
 
         $tags = $request->tags ?? [];
 
-        // Delete existing tags
-        $video->tags()->delete();
-
         $tagModels = [];
         $uniqueTags = [];
-        
+
         foreach ($tags as $tagStr) {
             $tagStr = trim($tagStr);
-            if (empty($tagStr)) continue;
+            if (empty($tagStr)) {
+                continue;
+            }
 
             $normalized = \App\Services\SearchNormalizationService::normalizeEnglishAndRoman($tagStr) ?? strtolower($tagStr);
-            
-            if (in_array($normalized, $uniqueTags)) continue;
-            
+
+            if (in_array($normalized, $uniqueTags)) {
+                continue;
+            }
+
             $uniqueTags[] = $normalized;
             $tagModels[] = new \App\Models\VideoTag([
                 'tag' => $tagStr,
@@ -627,19 +631,60 @@ class VideoApprovalController extends Controller
             ]);
         }
 
-        if (count($tagModels) > 0) {
-            $video->tags()->saveMany($tagModels);
+        $completedFromManualTags = DB::transaction(function () use ($video, $tagModels) {
+            $video->tags()->delete();
+
+            if (count($tagModels) > 0) {
+                $video->tags()->saveMany($tagModels);
+            }
+
+            // Saving one or more manual tags is an explicit admin fallback for a
+            // video whose automatic processing failed. Promote it to completed,
+            // but never complete pending/processing videos or an empty tag set.
+            if (count($tagModels) > 0 && $video->processing_status === 'failed') {
+                $video->forceFill([
+                    'processing_status' => 'completed',
+                    'processing_error' => null,
+                    'processing_completed_at' => now(),
+                ])->saveQuietly();
+
+                return true;
+            }
+
+            // Refresh updated_at without firing Scout's model observer. Search
+            // synchronization is attempted explicitly below and is best-effort.
+            $video->touchQuietly();
+
+            return false;
+        });
+
+        $video->refresh()->load('tags');
+
+        try {
+            if ($video->shouldBeSearchable()) {
+                $video->searchable();
+            }
+        } catch (\Throwable $exception) {
+            Log::warning('Tags saved but video search synchronization failed', [
+                'video_id' => $video->id,
+                'error' => $exception->getMessage(),
+            ]);
         }
 
-        // Trigger a save on the video to update Typesense
-        $video->touch();
-        if ($video->shouldBeSearchable()) {
-            $video->searchable();
+        if ($completedFromManualTags) {
+            Log::info('Failed video marked as completed after manual tags were added', [
+                'video_id' => $video->id,
+                'tag_count' => count($tagModels),
+            ]);
         }
 
         return response()->json([
-            'message' => 'Tags saved successfully',
+            'message' => $completedFromManualTags
+                ? 'Tags saved and video marked as completed successfully'
+                : 'Tags saved successfully',
             'tags' => collect($tagModels)->pluck('tag')->toArray(),
+            'processing_status' => $video->processing_status,
+            'completed_from_manual_tags' => $completedFromManualTags,
         ]);
     }
 }

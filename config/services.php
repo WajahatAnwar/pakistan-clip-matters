@@ -63,4 +63,8 @@ return [
         'api_key' => env('EMBEDDING_API_KEY', ''),
     ],
 
+    'transcript_api' => [
+        'key' => env('TRANSCRIPT_API_KEY', ''),
+    ],
+
 ];

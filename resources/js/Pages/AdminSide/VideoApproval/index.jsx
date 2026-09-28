@@ -510,6 +510,7 @@ export default function Index({ canViewArchived, canManageVideos }) {
     previewLoading,
     canViewArchived,
     canManageVideos,
+    onRefresh: () => fetchVideos(paginationModel.page, paginationModel.pageSize, searchQuery, sortBy),
   };
 
   // Determine which component to render based on current tab

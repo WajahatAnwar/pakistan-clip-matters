@@ -97,7 +97,7 @@ export default function TagsModal({ open, onClose, video, onTagsSaved }) {
             });
             
             if (onTagsSaved) {
-                onTagsSaved(video.id, response.data.tags);
+                onTagsSaved(video.id, response.data.tags, response.data);
             }
             onClose();
         } catch (err) {

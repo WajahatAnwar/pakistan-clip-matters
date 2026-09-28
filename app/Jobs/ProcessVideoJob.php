@@ -89,6 +89,20 @@ class ProcessVideoJob implements ShouldQueue
                 throw new \Exception('Video record not found');
             }
 
+            // A retry may already be queued when an admin manually completes a
+            // failed video by adding tags. Never let that stale retry move the
+            // video back to "processing" and overwrite the manual recovery.
+            // Explicit reprocessing remains possible because those endpoints
+            // reset the video to "pending" before dispatching a fresh job.
+            if ($video->processing_status === 'completed') {
+                Log::info('ProcessVideoJob skipped because video is already completed', [
+                    'user_id' => $this->userId,
+                    'video_id' => $this->videoId,
+                ]);
+
+                return;
+            }
+
             $dropboxService = new DropboxService($user);
 
             // Dropbox size is not guaranteed to be stored before processing.

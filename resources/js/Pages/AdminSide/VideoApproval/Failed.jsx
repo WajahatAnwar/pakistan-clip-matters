@@ -36,7 +36,8 @@ export default function Failed({
   onSingleAction,
   onPreview,
   previewLoading,
-  canManageVideos
+  canManageVideos,
+  onRefresh
 }) {
   const { t } = useTranslation();
 
@@ -48,8 +49,14 @@ export default function Failed({
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [selectedVideoForTags, setSelectedVideoForTags] = useState(null);
 
-  const handleTagsSaved = (videoId, newTags) => {
-      setLocalVideos(prev => prev.map(v => 
+  const handleTagsSaved = (videoId, newTags, result) => {
+      if (result?.processing_status === 'completed') {
+          setLocalVideos(prev => prev.filter(v => v.id !== videoId));
+          onRefresh?.();
+          return;
+      }
+
+      setLocalVideos(prev => prev.map(v =>
           v.id === videoId ? { ...v, tags_list: newTags } : v
       ));
   };
