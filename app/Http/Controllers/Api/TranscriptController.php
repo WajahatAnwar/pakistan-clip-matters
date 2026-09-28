@@ -4,10 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Video;
-use App\Services\AssemblyAiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 
 class TranscriptController extends Controller
 {
@@ -71,9 +69,7 @@ class TranscriptController extends Controller
             ], 422);
         }
 
-        $video = Video::with('user')
-            ->where('transcript_id', $transcriptId)
-            ->first();
+        $video = Video::where('transcript_id', $transcriptId)->first();
 
         if (! $video) {
             return response()->json([
@@ -82,26 +78,51 @@ class TranscriptController extends Controller
             ], 404);
         }
 
-        try {
-            $transcript = (new AssemblyAiService($video->user))->getTranscript($transcriptId);
-        } catch (\Throwable $exception) {
-            Log::warning('Transcript API failed to retrieve AssemblyAI transcript', [
-                'video_id' => $video->id,
-                'transcript_id' => $transcriptId,
-                'error' => $exception->getMessage(),
-            ]);
-
-            return response()->json([
-                'message' => 'Unable to retrieve transcript from AssemblyAI.',
-                'transcript_id' => $transcriptId,
-                'error' => $exception->getMessage(),
-            ], 502);
-        }
-
         return response()->json([
             'transcript_id' => $transcriptId,
-            'text' => (string) ($transcript['text'] ?? ''),
+            'transcript_urdu' => $this->mainText($video->transcript_urdu),
+            'transcript_english' => $this->mainText($video->transcript_english),
         ]);
+    }
+
+    private function mainText(mixed $transcript): string
+    {
+        if (is_string($transcript)) {
+            $trimmed = trim($transcript);
+            $decoded = json_decode($trimmed, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $this->mainText($decoded);
+            }
+
+            return $trimmed;
+        }
+
+        if (! is_array($transcript)) {
+            return '';
+        }
+
+        if (isset($transcript['text']) && is_string($transcript['text'])) {
+            return trim($transcript['text']);
+        }
+
+        foreach (['utterances', 'segments', 'taggedTranscript', 'transcript'] as $key) {
+            if (isset($transcript[$key]) && is_array($transcript[$key])) {
+                return $this->mainText($transcript[$key]);
+            }
+        }
+
+        $texts = [];
+        foreach ($transcript as $segment) {
+            if (is_array($segment) && isset($segment['text']) && is_string($segment['text'])) {
+                $text = trim($segment['text']);
+                if ($text !== '') {
+                    $texts[] = $text;
+                }
+            }
+        }
+
+        return implode("\n", $texts);
     }
 
     private function apiKeyError(Request $request): ?JsonResponse

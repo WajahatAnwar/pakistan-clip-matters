@@ -5,8 +5,6 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Video;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class TranscriptApiTest extends TestCase
@@ -20,11 +18,26 @@ class TranscriptApiTest extends TestCase
         config(['services.transcript_api.key' => 'test-transcript-api-key']);
     }
 
-    public function test_it_returns_only_the_transcript_id_and_text_for_a_known_id(): void
+    public function test_it_returns_original_urdu_and_english_transcripts_for_a_known_id(): void
     {
-        $user = User::factory()->create([
-            'assemblyai_api_key' => 'user-assemblyai-key',
-        ]);
+        $user = User::factory()->create();
+
+        $urduTranscript = [
+            [
+                'speaker' => 'A',
+                'text' => 'یہ مکمل اردو متن ہے۔',
+                'words' => [['text' => 'یہ', 'start' => 0, 'end' => 100]],
+            ],
+            ['speaker' => 'B', 'text' => 'یہ دوسرا حصہ ہے۔'],
+        ];
+        $englishTranscript = [
+            [
+                'speaker' => 'A',
+                'text' => 'This is the complete English transcript.',
+                'words' => [['text' => 'This', 'start' => 0, 'end' => 100]],
+            ],
+            ['speaker' => 'B', 'text' => 'This is the second section.'],
+        ];
 
         $video = Video::create([
             'user_id' => $user->id,
@@ -32,23 +45,8 @@ class TranscriptApiTest extends TestCase
             'filename' => 'video.mp4',
             'title' => 'API transcript test',
             'transcript_id' => 'transcript-123',
-        ]);
-
-        $assemblyTranscript = [
-            'id' => 'transcript-123',
-            'status' => 'completed',
-            'text' => 'This is the complete transcript.',
-            'language_code' => 'en',
-            'utterances' => [
-                ['speaker' => 'A', 'text' => 'This is the complete transcript.'],
-            ],
-            'words' => [
-                ['text' => 'This', 'start' => 0, 'end' => 200],
-            ],
-        ];
-
-        Http::fake([
-            'api.assemblyai.com/v2/transcript/transcript-123' => Http::response($assemblyTranscript),
+            'transcript_urdu' => $urduTranscript,
+            'transcript_english' => $englishTranscript,
         ]);
 
         $response = $this->postJson('/api/transcripts', [
@@ -59,12 +57,9 @@ class TranscriptApiTest extends TestCase
 
         $response->assertOk()->assertExactJson([
             'transcript_id' => 'transcript-123',
-            'text' => 'This is the complete transcript.',
+            'transcript_urdu' => "یہ مکمل اردو متن ہے۔\nیہ دوسرا حصہ ہے۔",
+            'transcript_english' => "This is the complete English transcript.\nThis is the second section.",
         ]);
-
-        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.assemblyai.com/v2/transcript/transcript-123'
-            && $request->hasHeader('authorization', 'user-assemblyai-key')
-        );
     }
 
     public function test_it_lists_transcripts_with_text_length_and_pagination(): void
