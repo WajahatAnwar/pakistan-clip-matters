@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { preservePassages, appendSemanticPage } from '../../resources/js/utils/semanticResults.js';
+const a = { video: { id: 2 }, match_count: 1, segments: [{ segment_id: 'a', start_time: 8, end_time: 20, score: 95 }] };
+const b = { video: { id: 1 }, match_count: 99, match_types: ['tag_match'], segments: [{ segment_id: 'b', start_time: 9, end_time: 12, score: 90 }] };
+assert.deepEqual(preservePassages([a, b]).map(v => v.video.id), [2, 1]);
+const overlapping = { ...a, segments: [...a.segments, { segment_id: 'c', start_time: 9, end_time: 12 }, a.segments[0]] };
+assert.deepEqual(preservePassages([overlapping])[0].segments.map(s => s.segment_id), ['a', 'c']);
+const once = appendSemanticPage([a, b], [overlapping]);
+assert.deepEqual(appendSemanticPage(once, [overlapping]), once);
+assert.deepEqual(once.map(v => v.video.id), [2, 1]);
+assert.deepEqual(once[0].segments.map(s => s.segment_id), ['a', 'c']);
+console.log('4 semantic presentation checks passed');

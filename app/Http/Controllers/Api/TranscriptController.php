@@ -9,6 +9,80 @@ use Illuminate\Http\Request;
 
 class TranscriptController extends Controller
 {
+    public function document(Request $request): \Illuminate\Contracts\View\View
+    {
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:255'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+        $title = trim($validated['title'] ?? '');
+        $videos = Video::query()
+            ->whereNotNull('transcript_id')
+            ->where('transcript_id', '!=', '')
+            ->when($title !== '', fn ($query) => $query->where('title', 'like', '%'.$title.'%'))
+            ->latest('id')
+            ->paginate(50)
+            ->appends(['title' => $title]);
+
+        $videos->getCollection()->each(function (Video $video) {
+            $sections = [];
+            foreach (['Urdu' => 'transcript_urdu', 'English' => 'transcript_english'] as $language => $field) {
+                $rows = $this->documentRows($video->$field, $video->transcript_timestamp_unit ?? 'milliseconds');
+                if ($rows !== []) {
+                    $sections[] = ['language' => $language, 'rows' => $rows];
+                }
+            }
+            if ($sections === []) {
+                $sections[] = ['language' => 'Transcript', 'rows' => $this->documentRows($video->transcript_text, $video->transcript_timestamp_unit ?? 'milliseconds')];
+            }
+            $video->setAttribute('document_sections', $sections);
+        });
+
+        return view('transcripts.document', compact('videos', 'title'));
+    }
+
+    private function documentRows(mixed $transcript, string $unit): array
+    {
+        if (is_string($transcript)) {
+            $decoded = json_decode($transcript, true);
+            if (is_array($decoded)) {
+                return $this->documentRows($decoded, $unit);
+            }
+            return trim($transcript) === '' ? [] : [['text' => trim($transcript), 'timestamp' => null]];
+        }
+        if (! is_array($transcript)) {
+            return [];
+        }
+        foreach (['utterances', 'segments', 'taggedTranscript', 'transcript'] as $key) {
+            if (isset($transcript[$key]) && is_array($transcript[$key])) {
+                return $this->documentRows($transcript[$key], $unit);
+            }
+        }
+        if (isset($transcript['text']) && is_string($transcript['text'])) {
+            $text = trim($transcript['text']);
+            if ($text === '') {
+                return [];
+            }
+            $format = static function ($value) use ($unit): ?string {
+                if (! is_numeric($value) || $value < 0) {
+                    return null;
+                }
+                $seconds = (int) floor($value / ($unit === 'milliseconds' ? 1000 : 1));
+                return sprintf('%02d:%02d:%02d', intdiv($seconds, 3600), intdiv($seconds % 3600, 60), $seconds % 60);
+            };
+            $start = $format($transcript['start'] ?? null);
+            $end = $format($transcript['end'] ?? null);
+            return [['text' => $text, 'timestamp' => $start === null ? null : $start.($end === null ? '' : ' – '.$end)]];
+        }
+        $rows = [];
+        foreach ($transcript as $segment) {
+            if (is_array($segment)) {
+                array_push($rows, ...$this->documentRows($segment, $unit));
+            }
+        }
+        return $rows;
+    }
+
     public function index(Request $request): JsonResponse
     {
         if ($authError = $this->apiKeyError($request)) {

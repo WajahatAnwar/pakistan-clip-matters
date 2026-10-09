@@ -24,6 +24,8 @@ use OpenAI\Client as OpenAIClient;
 use App\Services\ProcessService;
 use App\Http\Controllers\ProfileController;
 
+Route::get('/transcripts', [\App\Http\Controllers\Api\TranscriptController::class, 'document'])
+    ->name('transcripts.document');
 
 Route::middleware(['auth'])->group(function () {
 

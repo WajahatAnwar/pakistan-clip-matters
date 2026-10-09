@@ -11,6 +11,13 @@ class Video extends Model
 {
     use Searchable;
 
+    public const SEARCH_CARD_COLUMNS = [
+        'id', 'title', 'filename', 'youtube_url', 'youtube_video_id',
+        'language_detected', 'created_at', 'video_created_at',
+        'audio_duration_seconds', 'summary', 'summary_urdu', 'summary_english',
+        'processing_status', 'approval_status', 'is_archived', 'has_audio',
+    ];
+
     protected static function booted()
     {
         static::updated(function ($video) {
@@ -65,6 +72,7 @@ class Video extends Model
         'archived_at',
         'rejection_reason',
         'has_audio',
+        'transcript_timestamp_unit',
     ];
 
     protected $casts = [

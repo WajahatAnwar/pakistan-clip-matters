@@ -5,4 +5,4 @@
 echo "Starting application..."
 
 # Run Python directly - it will read PORT from environment
-exec python embeddings_test.py
+exec python -u embeddings_test.py

@@ -887,8 +887,8 @@ class VideoController extends Controller
         if ($videoId) $videoQuery->where('id', $videoId);
         if ($language) $videoQuery->where('language_detected', $language);
 
-        $allVideos = $videoQuery->get();
-        $totalVideos = $allVideos->count();
+        $totalVideos = (clone $videoQuery)->count();
+        $allVideos = $videoQuery->forPage($page, $perPage)->get(Video::SEARCH_CARD_COLUMNS);
 
         $groupedByVideo = $allVideos->map(function ($video) {
             return [
@@ -915,7 +915,7 @@ class VideoController extends Controller
 
         $totalPages = ceil($totalVideos / $perPage);
         $offset = ($page - 1) * $perPage;
-        $paginatedVideos = $groupedByVideo->slice($offset, $perPage)->values();
+        $paginatedVideos = $groupedByVideo->values();
 
         $responseTimeMs = round((microtime(true) - $startTime) * 1000);
         SearchLog::create([
@@ -1001,8 +1001,8 @@ class VideoController extends Controller
                 if ($language) $videoQuery->where('language_detected', $language);
             }
 
-            $allVideos = $videoQuery->get();
-            $totalVideos = $allVideos->count();
+            $totalVideos = (clone $videoQuery)->count();
+            $allVideos = $videoQuery->forPage($page, $perPage)->get(Video::SEARCH_CARD_COLUMNS);
 
             $groupedByVideo = $allVideos->map(function ($video) use ($filterType) {
                 return [
@@ -1029,7 +1029,7 @@ class VideoController extends Controller
 
             $totalPages = ceil($totalVideos / $perPage);
             $offset = ($page - 1) * $perPage;
-            $paginatedVideos = $groupedByVideo->slice($offset, $perPage)->values();
+            $paginatedVideos = $groupedByVideo->values();
 
             $responseTimeMs = round((microtime(true) - $startTime) * 1000);
             SearchLog::create([
@@ -1119,7 +1119,7 @@ class VideoController extends Controller
 
                 // Enrich with video data
                 $videoIds = collect($results['results'] ?? [])->pluck('video_id')->filter()->unique()->values()->toArray();
-                $videos = !empty($videoIds) ? Video::readyForSearch()->whereIn('id', $videoIds)->get()->keyBy('id') : collect();
+                $videos = !empty($videoIds) ? Video::readyForSearch()->whereIn('id', $videoIds)->get(Video::SEARCH_CARD_COLUMNS)->keyBy('id') : collect();
 
                 $enrichedResults = collect($results['results'] ?? [])->map(function ($result) use ($videos) {
                     $vid = $result['video_id'] ?? null;
@@ -1233,7 +1233,7 @@ class VideoController extends Controller
                         ->orderByDesc('video_created_at')
                         ->orderByDesc('created_at')
                         ->limit(40)
-                        ->get();
+                        ->get(Video::SEARCH_CARD_COLUMNS);
                         
                     $tagVideoIds = $exactTagVideos->pluck('id')->toArray();
                     $newGroupedByVideo = collect();
@@ -1458,8 +1458,8 @@ class VideoController extends Controller
         if ($videoId) $videoQuery->where('id', $videoId);
         if ($language) $videoQuery->where('language_detected', $language);
         
-        $allVideos = $videoQuery->get();
-        $totalVideos = $allVideos->count();
+        $totalVideos = (clone $videoQuery)->count();
+        $allVideos = $videoQuery->forPage($page, $perPage)->get(Video::SEARCH_CARD_COLUMNS);
         
         // Group by video (each video is its own group with empty segments)
         $groupedByVideo = $allVideos->map(function($video) {
@@ -1485,7 +1485,7 @@ class VideoController extends Controller
         // Calculate pagination
         $totalPages = ceil($totalVideos / $perPage);
         $offset = ($page - 1) * $perPage;
-        $paginatedVideos = $groupedByVideo->slice($offset, $perPage)->values();
+        $paginatedVideos = $groupedByVideo->values();
         
         return response()->json([
             'success' => true,
@@ -1519,7 +1519,8 @@ class VideoController extends Controller
     // Short semantic acronym/keyword fallback for title matches (e.g. "hnr").
     // This ensures brief queries that often appear in titles return all relevant videos,
     // not only transcript-segment semantic hits.
-    $normalizedQuery = trim((string) ($query ?? ''));
+    $query = \App\Services\SearchTextNormalizer::normalize((string) ($query ?? ''));
+    $normalizedQuery = $query;
     $queryTokenCount = count(array_filter(preg_split('/\s+/', $normalizedQuery)));
 
     // ── PHP PERSON ALIAS DETECTION ────────────────────────────────────────────
@@ -1789,7 +1790,7 @@ class VideoController extends Controller
             ->orderByDesc('video_created_at')
             ->orderByDesc('created_at')
             ->limit(40)
-            ->get()
+            ->get(Video::SEARCH_CARD_COLUMNS)
             ->map(function ($video) {
                 return [
                     'video' => [
@@ -2160,7 +2161,7 @@ class VideoController extends Controller
             $results = $response->json();
         } else {
             // Cache key based on search payload (5-minute TTL for identical queries)
-            $cacheKey = 'search:' . md5(json_encode($searchPayload));
+            $cacheKey = 'search:passage-v1:' . md5(json_encode($searchPayload));
             $cacheTtl = 300; // 5 minutes
 
             $results = Cache::remember($cacheKey, $cacheTtl, function () use ($embeddingServiceUrl, $searchPayload, $endpoint) {
@@ -2200,8 +2201,13 @@ class VideoController extends Controller
             ? $results['metadata']
             : [];
 
+        $authoritativePassages = ($upstreamMetadata['passage_validation']['authority'] ?? null) === 'python_passage_v1';
+        if (!$isIncrementalSearch && ($upstreamMetadata['passage_validation']['status'] ?? null) === 'partial') {
+            Cache::forget($cacheKey); // A retry must re-evaluate the provider, not replay partial results.
+        }
+
         // Handle empty results from service
-        if (empty($results) || !isset($results['results'])) {
+        if (!$authoritativePassages && (empty($results) || !isset($results['results']))) {
             $mixedAlnumFallbackResponse = $runMixedAlnumSimpleFallback('empty_or_missing_service_results', [
                 'upstream_metadata' => $upstreamMetadata,
             ]);
@@ -2249,7 +2255,7 @@ class VideoController extends Controller
                 $videoQuery->whereYear('video_created_at', $filterYear);
             }
 
-            return $videoQuery->get()->keyBy('id');
+            return $videoQuery->get(Video::SEARCH_CARD_COLUMNS)->keyBy('id');
         };
 
         $enrichResultsWithVideoData = function (array $serviceResults, $videos) {
@@ -2274,6 +2280,9 @@ class VideoController extends Controller
 
             return [
                 'segment_id' => $result['id'] ?? null,
+                'segment_ids' => $result['segment_ids'] ?? [$result['id'] ?? null],
+                'transcript_speaker' => $result['transcript_speaker'] ?? null,
+                'passage_evidence' => $result['passage_evidence'] ?? [],
                 'score' => round(($result['score'] ?? 0) * 100, 2),
                 'match_types' => $result['match_types'] ?? [],
                 'matched_field' => $result['matched_field'] ?? null, // NEW: show which field matched
@@ -2417,7 +2426,7 @@ class VideoController extends Controller
         $upstreamMetadata['laravel_incremental_recovery_results_added'] = $upstreamMetadata['laravel_incremental_recovery_results_added'] ?? 0;
         $results['metadata'] = $upstreamMetadata;
 
-        if ($enrichedResults->isEmpty()) {
+        if (!$authoritativePassages && $enrichedResults->isEmpty()) {
             $mixedAlnumFallbackResponse = $runMixedAlnumSimpleFallback('enriched_results_empty_after_filters', [
                 'upstream_metadata' => $upstreamMetadata,
             ]);
@@ -2443,6 +2452,9 @@ class VideoController extends Controller
 
         }
 
+        if ($authoritativePassages) {
+            $groupedByVideo = (new \App\Services\SemanticResultPresenter)->group($enrichedResults);
+        } else {
         // Group results by video
         $groupedByVideo = $enrichedResults->groupBy('video.id')->map(function ($segments, $videoId) {
             $firstSegment = $segments->first();
@@ -2530,7 +2542,7 @@ class VideoController extends Controller
                 ->orderByDesc('video_created_at')
                 ->orderByDesc('created_at')
                 ->limit(40)
-                ->get();
+                ->get(Video::SEARCH_CARD_COLUMNS);
             
                 
             $exactTitleVideos = (clone $baseQuery())
@@ -2538,7 +2550,7 @@ class VideoController extends Controller
                 ->orderByDesc('video_created_at')
                 ->orderByDesc('created_at')
                 ->limit(40)
-                ->get();
+                ->get(Video::SEARCH_CARD_COLUMNS);
         }
 
         $tagVideoIds = $exactTagVideos->pluck('id')->toArray();
@@ -2701,6 +2713,8 @@ class VideoController extends Controller
             }
         }
 
+        }
+
         // Calculate pagination
         $totalVideos = $groupedByVideo->count();
         // Count actual unique segments after deduplication
@@ -2733,6 +2747,8 @@ class VideoController extends Controller
 
         $responseData = [
             'success' => true,
+            'search_status' => $upstreamMetadata['passage_validation']['status'] ?? 'completed',
+            'retryable' => $upstreamMetadata['passage_validation']['retryable'] ?? false,
             'query' => $query,
             'words' => $words,
             'speaker_filter' => $results['speaker_filter'] ?? null,
@@ -2757,6 +2773,7 @@ class VideoController extends Controller
             'has_next_page' => $page < $totalPages,
             'has_prev_page' => $page > 1,
             'search_metadata' => [
+                'passage_validation' => $upstreamMetadata['passage_validation'] ?? null,
                 'service_url' => $embeddingServiceUrl,
                 'search_type' => 'elastic_semantic',
                 'response_time_ms' => round((microtime(true) - $startTime) * 1000),
@@ -2896,12 +2913,19 @@ class VideoController extends Controller
             $errorMessage = 'Search service unavailable';
             if ($statusCode === 401) $errorMessage = 'Authentication failed. Invalid API key.';
             elseif ($statusCode === 429) $errorMessage = 'Rate limit exceeded. Please try again later.';
+            elseif ($statusCode === 503) $errorMessage = 'Search validation is temporarily unavailable. Please retry.';
             elseif ($statusCode === 422) $errorMessage = 'Invalid search parameters.';
+
+            $detail = json_decode($errorBody, true)['detail'] ?? null;
+            if (is_array($detail) && is_string($detail['message'] ?? null)) {
+                $errorMessage = $detail['message'];
+            }
 
             return response()->json([
                 'success' => false,
                 'message' => $errorMessage,
                 'error' => config('app.debug') ? $errorBody : null,
+                'retryable' => in_array($statusCode, [409, 429, 502, 503, 504]),
                 'status_code' => $statusCode
             ], $statusCode);
         }

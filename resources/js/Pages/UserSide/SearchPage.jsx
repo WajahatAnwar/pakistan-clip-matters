@@ -405,7 +405,9 @@ export default function SearchPage() {
         });
       } else {
         console.warn('⚠️ No results in response');
-        setSearchError(t('searchPage.noMatchingVideos'));
+        setSearchError(data?.search_status === 'partial'
+          ? 'Search evaluation is incomplete. Please retry.'
+          : (data?.message || t('searchPage.noMatchingVideos')));
         setIsSearching(false);
       }
 

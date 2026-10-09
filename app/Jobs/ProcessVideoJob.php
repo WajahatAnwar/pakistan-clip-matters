@@ -594,6 +594,7 @@ class ProcessVideoJob implements ShouldQueue
                 'audio_duration_seconds' => $finalTranscript['audio_duration'] ?? null,
                 'confidence' => $finalTranscript['confidence'] ?? null,
                 'speakers_count' => $results['speakers_count'] ?? null,
+                'transcript_timestamp_unit' => 'milliseconds',
                 'speakers_data' => isset($finalTranscript['utterances']) ? $finalTranscript['utterances'] : null,
                 'summary' => $finalTranscript['summary'] ?? null,
             ]);
@@ -639,7 +640,12 @@ class ProcessVideoJob implements ShouldQueue
                         // Original is English, only translate to Urdu
                         $transcriptUrdu = $this->translateUtterances($client, $utterances, 'Urdu');
                         // Store original as English (no refinement on translated text — refinement causes the model to revert translations)
-                        $transcriptEnglish = $utterances;
+                        $hasUrdu = collect($utterances)->contains(
+                            fn ($utterance) => preg_match('/\p{Arabic}/u', $utterance['text'] ?? '') === 1
+                        );
+                        $transcriptEnglish = $hasUrdu
+                            ? $this->translateUtterances($client, $utterances, 'English')
+                            : $utterances;
                         Log::info('Detected English - translated to Urdu, keeping original as English');
                     } else {
                         // Unknown or other language - translate to both (no refinement on translated text)
@@ -1098,7 +1104,7 @@ class ProcessVideoJob implements ShouldQueue
 
             try {
                 // Check if we have the required data for embeddings
-                if (!empty($video->speakers_data) && !empty($video->identification_data)) {
+                if (!empty($video->speakers_data)) {
                     // Dispatch embedding generation job to dedicated embeddings queue
                     \App\Jobs\GenerateVideoEmbedding::dispatch($video)->onQueue('high');
                     
@@ -1117,7 +1123,7 @@ class ProcessVideoJob implements ShouldQueue
                     ]);
                     
                     $results['embedding_job_dispatched'] = false;
-                    $results['embedding_skip_reason'] = 'Missing speakers_data or identification_data';
+                    $results['embedding_skip_reason'] = 'Missing speakers_data';
                     $results['steps'][] = ['step' => 8, 'action' => 'Embedding generation skipped', 'status' => 'skipped', 'reason' => 'Missing required data'];
                 }
             } catch (\Exception $e) {
@@ -1703,28 +1709,31 @@ REFINED SEGMENTS:";
                     $candidateTexts = $decoded['translations'] ?? null;
                     
                     if (json_last_error() === JSON_ERROR_NONE && is_array($candidateTexts)) {
-                        $hasUrdu = false;
-                        if ($targetLanguage === 'English') {
-                            foreach ($candidateTexts as &$ct) {
-                                if (isset($ct['text']) && preg_match('/[\x{0600}-\x{06FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', $ct['text'])) {
-                                    $hasUrdu = true;
-                                    // If this is the final attempt, we brute-force remove the Urdu characters
-                                    if ($attempt == $maxRetries) {
-                                        $ct['text'] = preg_replace('/[\x{0600}-\x{06FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', '', $ct['text']);
-                                        $ct['text'] = trim(preg_replace('/\s+/', ' ', $ct['text'])); // Clean up spaces
-                                        $hasUrdu = false; // We just stripped it out, so treat it as successful
-                                    }
-                                }
+                        // Every source segment needs exactly one non-empty translation.
+                        // Never accept partial batches or erase untranslated characters.
+                        $indexedTexts = [];
+                        $valid = count($candidateTexts) === count($batch);
+                        foreach ($candidateTexts as $candidate) {
+                            if (! is_array($candidate)) {
+                                $valid = false;
+                                break;
                             }
+                            $index = $candidate['index'] ?? null;
+                            $text = $candidate['text'] ?? null;
+                            if (! is_int($index) || ! array_key_exists($index, $batch)
+                                || isset($indexedTexts[$index]) || ! is_string($text)
+                                || (trim($text) === '' && trim($batch[$index]['text'] ?? '') !== '')
+                                || ($targetLanguage === 'English' && preg_match('/\p{Arabic}/u', $text))) {
+                                $valid = false;
+                                break;
+                            }
+                            $indexedTexts[$index] = $candidate;
                         }
-                        
-                        // Keep the latest candidate text so we don't fall back to 100% Urdu original text
-                        $translatedTexts = $candidateTexts;
-
-                        if (!$hasUrdu) {
+                        if ($valid) {
+                            $translatedTexts = array_values($indexedTexts);
                             $success = true;
                         } else {
-                            Log::warning("Translation batch {$batchIndex} attempt {$attempt} contained Urdu. Retrying...");
+                            Log::warning("Incomplete or invalid translation batch {$batchIndex}, attempt {$attempt}. Retrying...");
                         }
                     } else {
                         Log::error("Translation JSON parse error for batch {$batchIndex} attempt {$attempt}", [
@@ -1738,6 +1747,10 @@ REFINED SEGMENTS:";
                 }
             }
                 
+                if (! $success) {
+                    throw new \RuntimeException("Unable to produce a complete {$targetLanguage} translation for batch {$batchIndex}.");
+                }
+
                 // Map translated texts back to utterances
                 $batchTranslated = [];
                 foreach ($batch as $index => $utterance) {

@@ -18,6 +18,7 @@ class GenerateVideoEmbedding implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $videoId;
+    public $runId;
     
     /**
      * The number of seconds the job can run before timing out.
@@ -44,6 +45,7 @@ class GenerateVideoEmbedding implements ShouldQueue
     public function __construct($videoId)
     {
         $this->videoId = is_object($videoId) ? $videoId->id : $videoId;
+        $this->runId = (string) Str::uuid();
         $this->onQueue('high');
     }
 
@@ -52,6 +54,7 @@ class GenerateVideoEmbedding implements ShouldQueue
      */
     public function handle()
     {
+        $this->runId ??= (string) Str::uuid();
         // Fetch the video model - if it doesn't exist, delete this job
         $video = Video::find($this->videoId);
         
@@ -72,6 +75,10 @@ class GenerateVideoEmbedding implements ShouldQueue
             ]
         );
 
+        if ($this->attempts() > 1 && $embedding->active_run_id && $embedding->active_run_id !== $this->runId) {
+            Log::warning('Stale indexing retry skipped', ['video_id' => $video->id, 'run_id' => $this->runId]);
+            return;
+        }
         // Mark as processing
         $embedding->markAsProcessing();
 
@@ -84,7 +91,10 @@ class GenerateVideoEmbedding implements ShouldQueue
             }
 
             // Map speakers_data directly to segments
-            $enrichedSegments = $this->mapSpeakersDataToSegments($speakersData);
+            $enrichedSegments = app(\App\Services\TranscriptSegmentMapper::class)->map(
+                $speakersData, $video->transcript_timestamp_unit
+                    ?? ($video->transcript_id ? 'milliseconds' : 'unknown')
+            );
 
             if (empty($enrichedSegments)) {
                 throw new \Exception("No valid segments with text found after mapping data");
@@ -118,6 +128,11 @@ class GenerateVideoEmbedding implements ShouldQueue
                 'total_batches' => $totalBatches
             ]);
 
+            if ($embedding->active_run_id !== $this->runId) $embedding->update([
+                'active_run_id' => $this->runId, 'expected_batches' => $totalBatches,
+                'batch_acknowledgments' => [], 'segments_count' => 0,
+            ]);
+
             for ($batchNum = 0; $batchNum < $totalBatches; $batchNum++) {
                 $offset = $batchNum * $batchSize;
                 $batchSegments = array_slice($enrichedSegments, $offset, $batchSize);
@@ -125,6 +140,10 @@ class GenerateVideoEmbedding implements ShouldQueue
                 // Send all metadata the Python service needs for enriched Qdrant payload.
                 // No speakers_transcript or diarization_segments (unused, bloats payload by MBs)
                 $videoData = [
+                    'embedding_model' => config('services.embedding.model'),
+                    'embedding_dimensions' => config('services.embedding.dimensions'),
+                    'run_id' => $this->runId,
+                    'timestamp_unit' => 'seconds',
                     'video_id' => $video->id,
                     'video_title' => $video->title ?? '',
                     'video_filename' => $video->filename ?? '',
@@ -151,7 +170,8 @@ class GenerateVideoEmbedding implements ShouldQueue
                     'webhook_url' => route('api.webhooks.qdrant', [
                         'video_id' => $video->id,
                         'batch' => $batchNum + 1,
-                        'total' => $totalBatches
+                        'total' => $totalBatches,
+                        'run_id' => $this->runId
                     ]),
                 ];
 
@@ -255,47 +275,6 @@ class GenerateVideoEmbedding implements ShouldQueue
     /**
      * Map speakers_data directly to Qdrant segments
      */
-    private function mapSpeakersDataToSegments($speakersData)
-    {
-        $segments = [];
-
-        foreach ($speakersData as $utterance) {
-            // Check if timestamps are in milliseconds or seconds.
-            // AssemblyAI usually returns milliseconds.
-            $start = isset($utterance['start']) ? $utterance['start'] : 0;
-            $end = isset($utterance['end']) ? $utterance['end'] : 0;
-            
-            // Convert to seconds if > 10000
-            if ($end > 10000) {
-                $start = $start / 1000;
-                $end = $end / 1000;
-            }
-
-            $text = trim($utterance['text'] ?? '');
-            
-            if (empty($text)) {
-                continue;
-            }
-
-            // Figure out the speaker name from actualSpeaker or speaker label
-            $speakerName = $utterance['actualSpeaker'] ?? $utterance['speaker'] ?? 'Unknown Speaker';
-
-            $segments[] = [
-                'start' => $start,
-                'end' => $end,
-                'speaker' => $speakerName,
-                'text' => $text,
-            ];
-        }
-
-        Log::info("Mapped speakers_data to segments", [
-            'input_segments' => count($speakersData),
-            'mapped_segments' => count($segments)
-        ]);
-
-        return $segments;
-    }
-
     /**
      * Check if two time ranges overlap
      */
@@ -351,7 +330,7 @@ class GenerateVideoEmbedding implements ShouldQueue
 
         // Mark embedding as failed if it exists
         $embedding = VideoEmbedding::where('video_id', $this->videoId)->first();
-        if ($embedding) {
+        if ($embedding && $embedding->active_run_id === $this->runId) {
             $embedding->markAsFailed($exception->getMessage());
         }
     }

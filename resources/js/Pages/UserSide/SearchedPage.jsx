@@ -1,3 +1,4 @@
+import { preservePassages, appendSemanticPage } from '@/utils/semanticResults';
 import UserAuthenticateLayout from '@/Layouts/UserAuthenticateLayout';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -125,8 +126,14 @@ export default function SearchedPage() {
   const ENABLE_BACKGROUND_PREFETCH = false;
   const prefetchedDataRef = React.useRef(null);  // Store prefetched data
 
+  const authoritativePassages = searchMetadata?.passage_validation?.authority === 'python_passage_v1';
+  const semanticPresentation = authoritativePassages || searchMode === 'semantic';
+  const [validationRetryError, setValidationRetryError] = useState(null);
+  const [retryingValidation, setRetryingValidation] = useState(false);
+
   // Deduplicate segments within each video result by segment_id and time overlap
   const deduplicateSegments = (videoResults) => {
+    if (semanticPresentation) return preservePassages(videoResults);
     return videoResults.map(result => {
       if (!result.segments || result.segments.length <= 1) return result;
       
@@ -176,6 +183,7 @@ export default function SearchedPage() {
       return [];
     }
     const deduped = deduplicateSegments(parsed);
+    if (semanticPresentation) return deduped;
     // Sort: tag matches first, then semantic matches (with actual segments), then title-only cards after, both sorted by match_count desc
     return deduped.sort((a, b) => {
       const aIsTagMatch = a.match_types && a.match_types.includes('tag_match') ? 1 : 0;
@@ -187,7 +195,29 @@ export default function SearchedPage() {
       if (bIsTitleOnly !== aIsTitleOnly) return aIsTitleOnly - bIsTitleOnly;
       return (b.match_count || 0) - (a.match_count || 0);
     });
-  }, [videos]);
+  }, [videos, semanticPresentation]);
+
+  const retryPassageValidation = async () => {
+    setRetryingValidation(true);
+    setValidationRetryError(null);
+    try {
+      const body = { ...searchRequestBody, query, cursor: null, search_session_id: null, page: 1 };
+      const response = await fetch(route('videos.embeddings.search'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || 'Search unavailable. Please retry.');
+      router.post(route('searched.page'), { videos: data.grouped_by_video || [], query, searchMode,
+        totalVideos: data.total_videos, totalSegments: data.total_segments,
+        searchMetadata: data.search_metadata || {}, searchRequestBody: body,
+        cursor: data.cursor || null, search_session_id: data.search_session_id || null,
+        is_incremental: data.is_incremental || false });
+    } catch (error) {
+      setValidationRetryError(error.message || 'Search unavailable. Please retry.');
+    } finally { setRetryingValidation(false); }
+  };
 
   const [openFilters, setOpenFilters] = useState(false);
   // Default to Home tab (0) when there are search results, otherwise History tab can be selected
@@ -425,6 +455,8 @@ export default function SearchedPage() {
         data = await response.json();
       }
 
+      if (!data?.success) throw new Error(data?.message || 'Unable to load more passages. Please retry the search.');
+      setValidationRetryError(null);
       console.log('✅ View More response:', data);
 
       if (data.success && data.grouped_by_video) {
@@ -441,7 +473,9 @@ export default function SearchedPage() {
           existingVideoIds.add(vid);
           return true;
         });
-        const updatedResults = [...loadedResults, ...uniqueNewResults];
+        const updatedResults = semanticPresentation
+          ? appendSemanticPage(loadedResults, newResults)
+          : [...loadedResults, ...uniqueNewResults];
 
         // Handle both pagination types
         const newCursor = data.cursor?.next || null;
@@ -501,6 +535,7 @@ export default function SearchedPage() {
         }
       }
     } catch (error) {
+      setValidationRetryError(error.message || 'Unable to load more passages. Please retry the search.');
       console.error('❌ View More error:', error);
     } finally {
       loadingMoreRef.current = false;
@@ -703,7 +738,7 @@ export default function SearchedPage() {
     if (!text || !searchQuery) return text;
     // List of common English stop words that shouldn't be highlighted to prevent 
     // substring matches inside larger words (like "on" inside "Conference")
-    const stopWords = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'is', 'am', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up', 'about', 'into', 'over', 'after', 'this', 'that', 'it']);
+    const stopWords = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'is', 'am', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up', 'about', 'into', 'over', 'after', 'this', 'that', 'it', 'where', 'talks', 'speaks', 'کے', 'کی', 'کا', 'اور', 'میں', 'پر', 'سے', 'نے', 'کو', 'ہے', 'ہیں', 'کے', 'ke', 'ka', 'ki', 'aur', 'hai', 'hain']);
     
     // Split query into individual words, filter out stop words and single characters
     const words = searchQuery
@@ -715,10 +750,10 @@ export default function SearchedPage() {
     
     // Build regex that matches any of the query words (case-insensitive)
     const escaped = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(${escaped.join('|')})(?![\\p{L}\\p{N}_])`, 'giu');
     const parts = text.split(pattern);
     return parts.map((part, i) =>
-      pattern.test(part)
+      i % 2 === 1
         ? <span key={i} style={{ backgroundColor: 'rgba(244,63,94,0.35)', color: '#FFF', borderRadius: '2px', padding: '0 2px', fontWeight: 600 }}>{part}</span>
         : part
     );
@@ -808,6 +843,14 @@ export default function SearchedPage() {
         {/* Conditional Content Based on Tab */}
         {tabValue === 0 ? (
           <>
+            {(searchMetadata?.passage_validation?.status === 'partial' || validationRetryError) && (
+              <Box role="status" sx={{ color: '#fbbf24', mb: 2 }}>
+                <Typography>{validationRetryError || 'Search evaluation is incomplete. Only verified passages are shown.'}</Typography>
+                <Button onClick={retryPassageValidation} disabled={retryingValidation}>
+                  {retryingValidation ? 'Retrying…' : 'Retry search'}
+                </Button>
+              </Box>
+            )}
             {/* Results Heading with Elastic Search Info */}
             <Box sx={{ mb: { xs: 2, sm: 3 } }}>
               <Typography sx={{ color: 'white', fontWeight: 600, fontSize: { xs: '1rem', sm: '1.15rem', md: '1.25rem' }, mb: 1 }}>
@@ -892,10 +935,10 @@ export default function SearchedPage() {
                   {query ? (
                     <>
                       <Typography sx={{ color: 'white', fontWeight: 600, fontSize: { xs: '1.1rem', sm: '1.3rem', md: '1.5rem' } }}>
-                        {t('searchPage.noResults')}
+                        {searchMetadata?.passage_validation?.status === 'partial' ? 'No verified passages yet' : t('searchPage.noResults')}
                       </Typography>
                       <Typography sx={{ color: '#9CA3AF', fontSize: { xs: '0.85rem', sm: '0.95rem' }, maxWidth: 440, lineHeight: 1.6 }}>
-                        {t('searchPage.noResultsFor', { query })}
+                        {searchMetadata?.passage_validation?.status === 'partial' ? 'Please retry the search to continue evaluation.' : t('searchPage.noResultsFor', { query })}
                       </Typography>
                     </>
                   ) : (
