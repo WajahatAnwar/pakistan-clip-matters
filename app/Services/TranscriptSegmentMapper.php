@@ -22,7 +22,11 @@ class TranscriptSegmentMapper
             $scale = $unit === 'milliseconds' ? 1000 : 1;
             $segments[] = [
                 'start' => $start / $scale, 'end' => $end / $scale,
-                'speaker' => $utterance['actualSpeaker'] ?? 'Unknown Speaker',
+                'speaker' => (($utterance['identity_source']??null)==='manual'
+                    || (($utterance['identity_status']??null)==='accepted' && ($utterance['identity_version']??null)===SpeakerIdentityPolicy::VERSION))
+                    ? ($utterance['actualSpeaker']??'Unknown Speaker') : 'Unknown Speaker',
+                'identity_status'=>$utterance['identity_status']??'unknown',
+                'identity_version'=>SpeakerIdentityPolicy::VERSION,
                 'transcript_speaker' => $utterance['speaker'] ?? null,
                 'text' => $text,
             ];

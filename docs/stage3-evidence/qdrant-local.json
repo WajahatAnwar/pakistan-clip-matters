@@ -1,0 +1,200 @@
+{
+  "transport": "Qdrant persistent local engine",
+  "human_footage_verified": false,
+  "summary_judge": "synthetic oracle",
+  "results": [
+    {
+      "query": "IPP",
+      "type": "text",
+      "contract": "normalized",
+      "elapsed_seconds": 0.292,
+      "metadata": {
+        "authority": "python_contract_v1",
+        "representation": "transcript_contract_v1",
+        "contract": "normalized",
+        "normalized_index_used": false,
+        "count_scope": "retained_result_set_after_filters",
+        "scanned_segments": 1100,
+        "scope": "indexed_payloads_within_scan_budget",
+        "exhaustive": true,
+        "status": "completed",
+        "retryable": false,
+        "counts": {
+          "matching_videos": 3,
+          "displayed_passages": 3,
+          "matched_transcript_occurrences": 9
+        }
+      }
+    },
+    {
+      "query": "I.P.P.",
+      "type": "text",
+      "contract": "normalized",
+      "elapsed_seconds": 0.432,
+      "metadata": {
+        "authority": "python_contract_v1",
+        "representation": "transcript_contract_v1",
+        "contract": "normalized",
+        "normalized_index_used": false,
+        "count_scope": "retained_result_set_after_filters",
+        "scanned_segments": 1100,
+        "scope": "indexed_payloads_within_scan_budget",
+        "exhaustive": true,
+        "status": "completed",
+        "retryable": false,
+        "counts": {
+          "matching_videos": 3,
+          "displayed_passages": 3,
+          "matched_transcript_occurrences": 9
+        }
+      }
+    },
+    {
+      "query": "I P P",
+      "type": "text",
+      "contract": "normalized",
+      "elapsed_seconds": 0.399,
+      "metadata": {
+        "authority": "python_contract_v1",
+        "representation": "transcript_contract_v1",
+        "contract": "normalized",
+        "normalized_index_used": false,
+        "count_scope": "retained_result_set_after_filters",
+        "scanned_segments": 1100,
+        "scope": "indexed_payloads_within_scan_budget",
+        "exhaustive": true,
+        "status": "completed",
+        "retryable": false,
+        "counts": {
+          "matching_videos": 3,
+          "displayed_passages": 3,
+          "matched_transcript_occurrences": 9
+        }
+      }
+    },
+    {
+      "query": "آئی پی پی",
+      "type": "text",
+      "contract": "alias",
+      "elapsed_seconds": 0.348,
+      "metadata": {
+        "authority": "python_contract_v1",
+        "representation": "transcript_contract_v1",
+        "contract": "alias",
+        "normalized_index_used": false,
+        "count_scope": "retained_result_set_after_filters",
+        "scanned_segments": 1100,
+        "scope": "indexed_payloads_within_scan_budget",
+        "exhaustive": true,
+        "status": "completed",
+        "retryable": false,
+        "counts": {
+          "matching_videos": 3,
+          "displayed_passages": 3,
+          "matched_transcript_occurrences": 12
+        }
+      }
+    },
+    {
+      "query": "Fuuast graduation ceremony",
+      "type": "title",
+      "contract": "normalized",
+      "elapsed_seconds": 0.33,
+      "metadata": {
+        "authority": "python_contract_v1",
+        "representation": "transcript_contract_v1",
+        "contract": "title",
+        "normalized_index_used": false,
+        "count_scope": "retained_result_set_after_filters",
+        "scanned_segments": 1100,
+        "scope": "indexed_payloads_within_scan_budget",
+        "exhaustive": false,
+        "status": "partial",
+        "retryable": false,
+        "counts": {
+          "matching_videos": 1000,
+          "displayed_passages": 0,
+          "matched_transcript_occurrences": null
+        }
+      }
+    },
+    {
+      "query": "elite privileges",
+      "type": "summary",
+      "contract": "normalized",
+      "elapsed_seconds": 0.421,
+      "metadata": {
+        "authority": "python_contract_v1",
+        "representation": "transcript_contract_v1",
+        "contract": "summary",
+        "normalized_index_used": false,
+        "count_scope": "retained_result_set_after_filters",
+        "scanned_segments": 1100,
+        "scope": "indexed_payloads_within_scan_budget",
+        "exhaustive": true,
+        "passage_validation": {
+          "diagnostic_id": "5b41f9e9315d42598b51b9b7fbc67551",
+          "authority": "python_passage_v1",
+          "status": "completed",
+          "retryable": false,
+          "provider_failure": null,
+          "invalid_evidence_count": 0,
+          "candidate_count": 1,
+          "evaluated_count": 1,
+          "provider_calls": 1,
+          "elapsed_seconds": 0.0,
+          "input_passage_characters": 56,
+          "limits": {
+            "candidates": 60,
+            "calls": 6,
+            "deadline_seconds": 30,
+            "characters_per_passage": 2400,
+            "output_tokens_per_call": 2400
+          },
+          "counts": {
+            "videos": 1,
+            "passages": 1,
+            "source_segments": 1,
+            "occurrences": null
+          }
+        },
+        "summary_candidate_videos": 1,
+        "status": "completed",
+        "retryable": false,
+        "counts": {
+          "matching_videos": 1,
+          "displayed_passages": 1,
+          "matched_transcript_occurrences": null
+        }
+      }
+    }
+  ],
+  "normalized_index": {
+    "dry_run": {
+      "video_id": 1,
+      "points": 1,
+      "payload_updates": 1,
+      "applied": false
+    },
+    "fallback_when_incomplete": true,
+    "vectors_and_original_text_preserved": true,
+    "metadata": {
+      "authority": "python_contract_v1",
+      "representation": "transcript_contract_v1",
+      "contract": "normalized",
+      "normalized_index_used": true,
+      "count_scope": "retained_result_set_after_filters",
+      "scanned_segments": 3,
+      "scope": "indexed_payloads_within_scan_budget",
+      "exhaustive": true,
+      "status": "completed",
+      "retryable": false,
+      "counts": {
+        "matching_videos": 3,
+        "displayed_passages": 3,
+        "matched_transcript_occurrences": 9
+      }
+    }
+  },
+  "peak_rss_kib": 107004
+}

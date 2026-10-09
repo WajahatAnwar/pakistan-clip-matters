@@ -31,7 +31,7 @@ class AssemblyAiService
 
         $response = Http::timeout(300) // 5 minutes for large files
             ->withOptions([
-                'verify' => false, // Disable SSL verification for local development
+                'verify' => true, // Disable SSL verification for local development
                 'connect_timeout' => 30,
             ])
             ->withHeaders([
@@ -71,33 +71,23 @@ class AssemblyAiService
         // Convert local file path to public URL if needed
         $audioUrl = $this->convertToPublicUrl($audioPath);
 
-        // Fetch all voice samples with voiceprints from database
-        $voiceSamples = VoiceSample::get();
-
-        // Build voiceprints array from database
-        $voiceprints = [];
-        foreach ($voiceSamples as $sample) {
-            $voiceprints[] = [
-                'label' => $sample->name ?? 'Speaker ' . $sample->id,
-                'voiceprint' => $sample->voiceprint ?? '2CP7vnIJwL5r+5q/JcBYviZ85T5dJNG+tNUTv8OyI72PrK69CyA0PxsjtD+ICD0/mJPuPkZW+L4Irgu/3Dnyvwnehj3li50+3hT6PQlD5L70yZ2+CDEzPk+jJL9Dh0A/p7i9PvCtfj35NZw+fXgcvrUbJj64IZk/mJKUPljDVD9qUWO+fMjBPZhPhT59neY9RsQPP/miWL9cExi//3trvdohlL6Ump6+SR7wvi65TT7/DNo+w/oJP14UZj6Gg8k9CFKLO1DimLvcplc+sYxTvxuEnz94WsG7ELYfP5TQaz/6eYE+enHFvYqklb5dgNS9mezkPtaNfb/Y0Tc/om5lPlPb5Tx31cu+4Gv5O6STi78ttKm/LZJKvzAlNb6QhKc+pkkvvkxZkj2QTEI+tS1CP+bK4L0Qpba860/Wvm42UT8mRAi/MOlpPhnWjr9Yzc6+CXsuP8oe/T4fs9G+Yw5Pv7T6cT0ziru9OGwavRweB78G9De/xCNtP1xsDj4KI7E9kIXGPjk3PL8FsBU/PET0PKsZ8D3pFBu/mGkrP+QhvTy9c+S+Og6RvwDVmD43lYW9tBoevETvtD939wE/uC8cvqCqlzrueDy/yEJpvkRCN7/Bg2K+nhhivUbJsT43gQy/B9ZUv4GwNL/LARA/DE5KvvN5KD8YJDE/01lYvnLl7b7mK+u9bih2P8hy2T5SRSm/gPhnutZ+nj6EUea+hTTrvmwI/L/Lpji+ouAjvq3TRbymW6A+qvG0vjtbrz+CGpS+HFinv2qCUj8OzdW/ulAHv40Bz77s2hU/w7AIP5uIoj4mIpC+XOkAPzB7dD1xe+U+rw5JP0Mnjz0d2Py+GOEOPk58Fb/wS6E/g7W3PlpQUT49/+8+tKEBP/vxLb/wFv+9pS+Zv309l76/lv++CFw+v6m/Ir4W7ly+/m46vvkfAr0tttA++3dCPg5JP7/3hz8/Eihsvzqgm7091fy+llkUP8eJ+z6PSVc/aQGuPuKL1L3GmGO+qnzWPxuEWL8gCXc/8yxRP1Attj2gZ5Q6KOh6PgDS7L0QFYm8DJaHP6iDBD/pxCQ+lUiuvnJ5uj0zD5E+/I9/vrU9QT4/KXa+8emOPHHfF78qH7M+Zlshvo7J3r78DGO+bD5kvy5i0D3CM5M+kNqDPh0ZKj2MHB6+asnVPTglqb68ovg+1Hp6v4CHpD4CQuS+mpvEvwBwcT9pfK2/IEQmvzRaf720V9W94E2Xv1jL0r68RpS/fIwYP6d5bj9rmlM9MmNZPxIxlD70WNc+D6F7vxrVUT9oSbS+6h6RvgRmYj+6YIy+KnSzPhQDID2yBeI+JF0tv3TyMb6GV16/F7sDPmOXjz4tsWg+T5zMvg==',
-            ];
-        }
-
-        // If no voiceprints found, log warning and return empty result
-        if (empty($voiceprints)) {
-            Log::warning('No voiceprints found in database for speaker identification');
-            return [
-                'error' => 'No voiceprints available',
-                'message' => 'Please create voice samples first'
-            ];
-        }
+        $registry = app(SpeakerIdentityPolicy::class)->enroll(VoiceSample::get());
+        $enrolled = $registry['samples'];
+        Log::info('Speaker enrollment validation', ['eligible'=>count($enrolled), 'issues'=>$registry['issues']]);
+        if (!$enrolled) return ['error'=>'no_valid_enrollment','message'=>'No reviewed compatible voiceprints','status'=>'unknown'];
+        if (!config('speaker-identification.revision') || !is_numeric(config('speaker-identification.threshold')))
+            return ['error'=>'identification_not_configured','message'=>'Identification acceptance criteria unavailable','status'=>'unknown'];
+        if (!env('PYANNOTE_API_KEY')) throw new \RuntimeException('Identification provider is not configured');
+        $voiceprints = array_map(fn($e)=>['label'=>$e['label'],'voiceprint'=>$e['voiceprint']], $enrolled);
 
         // Build payload with optional webhook
         $payload = [
             'url' => $audioUrl,
             'voiceprints' => $voiceprints,
+            'model' => config('speaker-identification.model'),
+            'confidence' => true,
             'matching' => [
-                'threshold' => 50,
+                'threshold' => (float) config('speaker-identification.threshold'),
                 'exclusive' => true
             ]
         ];
@@ -114,7 +104,6 @@ class AssemblyAiService
         }
 
         Log::info('Calling Pyannote identify API', [
-            'audio_url' => $audioUrl,
             'voiceprints_count' => count($voiceprints),
             'voice_samples' => array_column($voiceprints, 'label'),
             'use_webhook' => $useWebhook
@@ -122,12 +111,12 @@ class AssemblyAiService
 
         $response = Http::timeout(60)
             ->withOptions([
-                'verify' => false,
+                'verify' => true,
                 'connect_timeout' => 30,
             ])
             ->withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . env('PYANNOTE_API_KEY', 'sk_0573c2ea6e7c472ca657e41a61e1287a')
+                'Authorization' => 'Bearer ' . env('PYANNOTE_API_KEY')
             ])
             ->post('https://api.pyannote.ai/v1/identify', $payload);
 
@@ -144,7 +133,12 @@ class AssemblyAiService
 
         $jobId = $responseData['jobId'] ?? null;
 
+        if (!$response->successful() || !is_string($jobId) || $jobId==='') throw new \RuntimeException('Identification provider submission failed');
         if ($jobId) {
+            \Illuminate\Support\Facades\DB::table('speaker_identification_runs')->insert([
+                'job_id'=>$jobId,'video_id'=>$videoId,'enrollment'=>json_encode(array_map(fn($e)=>array_diff_key($e,['voiceprint'=>true]),$enrolled)),
+                'status'=>'pending','created_at'=>now(),'updated_at'=>now()]);
+            if ($videoId) Video::whereKey($videoId)->update(['pyannote_job_id'=>$jobId,'pyannote_status'=>'processing']);
             // If using webhook, store the job ID and return immediately
             if ($useWebhook && $videoId) {
                 // Update video with the job ID for webhook tracking
@@ -259,14 +253,28 @@ class AssemblyAiService
     {
         $response = Http::timeout(60)
             ->withOptions([
-                'verify' => false,
+                'verify' => true,
                 'connect_timeout' => 30,
             ])
             ->withHeaders([
-                'Authorization' => 'Bearer ' . env('PYANNOTE_API_KEY', 'sk_0573c2ea6e7c472ca657e41a61e1287a'),
+                'Authorization' => 'Bearer ' . env('PYANNOTE_API_KEY'),
             ])->get("https://api.pyannote.ai/v1/jobs/{$jobId}");
 
         $json = $response->json();
+        if (!$response->successful() || !is_array($json)) throw new \RuntimeException('Identification provider read failed');
+        if (($json['status']??null)==='succeeded') {
+            $run=\Illuminate\Support\Facades\DB::table('speaker_identification_runs')->where('job_id',$jobId)->first();
+            if (!$run) throw new \RuntimeException('Unregistered identification job');
+            $active=app(SpeakerIdentityPolicy::class)->enroll(VoiceSample::get())['samples'];
+            $activeByLabel=array_column($active,null,'label');
+            $snapshot=array_values(array_filter(json_decode($run->enrollment,true),fn($e)=>
+                isset($activeByLabel[$e['label']]) && $activeByLabel[$e['label']]['fingerprint']===$e['fingerprint']
+                && $activeByLabel[$e['label']]['identity_key']===$e['identity_key']
+                && $activeByLabel[$e['label']]['name']===$e['name']
+                && ($e['revision']??null)===config('speaker-identification.revision')));
+            $json['output']=app(SpeakerIdentityPolicy::class)->normalize($json['output']??[],$snapshot);
+        }
+
 
         // Log::info("Pyannote Job Status", [
         //     'job_id' => $json['jobId'] ?? null,
@@ -287,15 +295,6 @@ class AssemblyAiService
             //     'match' => $segment['match'] ?? null,
             //     'dia_spk' => $segment['diarizationSpeaker'] ?? null,
             // ]);
-        }
-
-        // Voiceprints summary
-        foreach ($json['output']['voiceprints'] ?? [] as $print) {
-            Log::info("Voiceprint Summary", [
-                'diarization_speaker' => $print['speaker'] ?? null,
-                'match' => $print['match'] ?? null,
-                'confidence' => $print['confidence'] ?? [],
-            ]);
         }
 
         return $json;
@@ -368,7 +367,6 @@ class AssemblyAiService
         }
 
         $default = [
-            'audio_url' => $audioUrl,
             'speaker_labels' => true,
             'language_detection' => true,
             'speech_models' => ['universal-2'],
@@ -376,7 +374,7 @@ class AssemblyAiService
         $payload = array_merge($default, $options);
         $response = Http::timeout(60)
             ->withOptions([
-                'verify' => false,
+                'verify' => true,
                 'connect_timeout' => 30,
             ])
             ->withHeaders([
@@ -405,7 +403,7 @@ class AssemblyAiService
     {
         $response = Http::timeout(60)
             ->withOptions([
-                'verify' => false,
+                'verify' => true,
                 'connect_timeout' => 30,
             ])
             ->withHeaders([
@@ -481,7 +479,16 @@ class AssemblyAiService
             return ['success' => false, 'message' => 'Video not found for job'];
         }
 
-        if ($status === 'succeeded' && $output) {
+        if ($video->pyannote_status === 'completed') return ['success'=>true,'message'=>'Already processed'];
+        $verified=(new self(new User()))->getJobData($jobId);
+        $status=$verified['status']??null; $error=$verified['error']??null;
+        if ($status === 'succeeded') {
+            if (($verified['status']??null)!=='succeeded') return ['success'=>false,'message'=>'Provider has not completed'];
+            return \Illuminate\Support\Facades\DB::transaction(function() use($video,$jobId,$verified) {
+            $video=Video::whereKey($video->id)->lockForUpdate()->firstOrFail();
+            if($video->pyannote_job_id!==$jobId) return ['success'=>false,'message'=>'Stale identification job'];
+            if($video->pyannote_status==='completed') return ['success'=>true,'message'=>'Already processed'];
+            $output=$verified['output'];
             // Extract data from webhook payload
             $diarizationData = $output['diarization'] ?? [];
             $identificationData = $output['identification'] ?? [];
@@ -503,7 +510,7 @@ class AssemblyAiService
             ]);
 
             // Auto-tag speakers in transcript if we have identification data
-            if (!empty($identificationData)) {
+            if (is_array($identificationData)) {
                 try {
                     $speakersData = $video->speakers_data;
                     if (is_string($speakersData)) {
@@ -513,6 +520,11 @@ class AssemblyAiService
                     if (!empty($speakersData)) {
                         $taggingService = new \App\Services\SpeakerTaggingService();
                         $tagResult = $taggingService->tagSpeakers($speakersData, $identificationData);
+                        foreach (['transcript_english','transcript_urdu'] as $field) {
+                            $translated=$video->$field;
+                            for($i=0;$i<3&&is_string($translated);$i++) $translated=json_decode($translated,true);
+                            if(is_array($translated)) $video->$field=$taggingService->tagSpeakers($translated,$identificationData)['taggedTranscript'];
+                        }
 
                         $video->update([
                             'speakers_data' => json_encode($tagResult['taggedTranscript']),
@@ -537,6 +549,7 @@ class AssemblyAiService
                 'message' => 'Speaker identification completed',
                 'video_id' => $video->id
             ];
+            });
 
         } elseif ($status === 'failed' || $status === 'error') {
             Log::error('Pyannote identify job failed', [

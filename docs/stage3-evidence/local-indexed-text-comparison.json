@@ -1,0 +1,91 @@
+{
+  "scope": "first 100 indexed segments from each of five explicitly selected videos",
+  "source_segments": 500,
+  "human_audio_verified": false,
+  "queries": [
+    {
+      "query": "IPP",
+      "contract": "literal",
+      "videos": 3,
+      "passages": 3,
+      "occurrences": 3
+    },
+    {
+      "query": "IPP",
+      "contract": "normalized",
+      "videos": 3,
+      "passages": 3,
+      "occurrences": 3
+    },
+    {
+      "query": "IPP",
+      "contract": "alias",
+      "videos": 4,
+      "passages": 4,
+      "occurrences": 4
+    },
+    {
+      "query": "I.P.P.",
+      "contract": "literal",
+      "videos": 0,
+      "passages": 0,
+      "occurrences": 0
+    },
+    {
+      "query": "I.P.P.",
+      "contract": "normalized",
+      "videos": 3,
+      "passages": 3,
+      "occurrences": 3
+    },
+    {
+      "query": "I.P.P.",
+      "contract": "alias",
+      "videos": 4,
+      "passages": 4,
+      "occurrences": 4
+    },
+    {
+      "query": "I P P",
+      "contract": "literal",
+      "videos": 0,
+      "passages": 0,
+      "occurrences": 0
+    },
+    {
+      "query": "I P P",
+      "contract": "normalized",
+      "videos": 3,
+      "passages": 3,
+      "occurrences": 3
+    },
+    {
+      "query": "I P P",
+      "contract": "alias",
+      "videos": 4,
+      "passages": 4,
+      "occurrences": 4
+    },
+    {
+      "query": "آئی پی پی",
+      "contract": "literal",
+      "videos": 1,
+      "passages": 1,
+      "occurrences": 1
+    },
+    {
+      "query": "آئی پی پی",
+      "contract": "normalized",
+      "videos": 1,
+      "passages": 1,
+      "occurrences": 1
+    },
+    {
+      "query": "آئی پی پی",
+      "contract": "alias",
+      "videos": 4,
+      "passages": 4,
+      "occurrences": 4
+    }
+  ]
+}

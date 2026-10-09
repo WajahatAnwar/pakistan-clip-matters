@@ -631,7 +631,10 @@ class VideoController extends Controller
                 case 'title':
                     $searchMode = 'simple';
                     $filterType = 'title';
-                    if (empty($query)) abort(response()->json(['success' => false, 'message' => 'Title search requires a title query', 'errors' => ['query' => ['Title is required']]], 422));
+                    $query = trim((string) ($validated['title'] ?? '')) !== '' ? $validated['title'] : $query;
+                    $validated['query'] = $query;
+                    $validated['title'] = $query;
+                    if (trim((string) $query) === '') abort(response()->json(['success' => false, 'message' => 'Title search requires a title query', 'errors' => ['query' => ['Title is required']]], 422));
                     break;
                 case 'date':
                     $searchMode = 'simple';
@@ -643,10 +646,13 @@ class VideoController extends Controller
                     $filterType = 'language';
                     if (empty($language)) abort(response()->json(['success' => false, 'message' => 'Language search requires selecting a language', 'errors' => ['language' => ['Language is required']]], 422));
                     break;
+                case 'transcript_literal':
+                case 'transcript_alias':
                 case 'transcript':
+                    $validated['transcript_contract'] = $type === 'transcript_literal' ? 'literal' : ($type === 'transcript_alias' ? 'alias' : ($validated['transcript_contract'] ?? 'normalized'));
                     $searchMode = 'simple';
                     $filterType = 'text';
-                    if (empty($query)) abort(response()->json(['success' => false, 'message' => 'Transcript search requires a text query', 'errors' => ['query' => ['Query is required']]], 422));
+                    if (trim((string) $query) === '') abort(response()->json(['success' => false, 'message' => 'Transcript search requires a text query', 'errors' => ['query' => ['Query is required']]], 422));
                     break;
                 case 'summary':
                     $searchMode = 'simple';
@@ -712,7 +718,8 @@ class VideoController extends Controller
         'filter_month' => 'nullable|integer|min:1|max:12',
         'filter_date' => 'nullable|date',
         // Dual-mode search parameters
-        'search_type' => 'nullable|string|in:smart,speaker,title,date,language,transcript,summary',
+        'search_type' => 'nullable|string|in:smart,speaker,title,date,language,transcript,transcript_literal,transcript_alias,summary',
+        'transcript_contract' => 'nullable|string|in:literal,normalized,alias',
         'search_mode' => 'nullable|string|in:semantic,simple',
         'filter_type' => 'nullable|string|in:video,speaker,date,language,title,summary,text',
         // Incremental search parameters
@@ -831,6 +838,11 @@ class VideoController extends Controller
     $searchMode = $validated['search_mode'] ?? 'semantic'; // 'semantic' or 'simple'
     $filterType = $validated['filter_type'] ?? null;       // 'video', 'speaker', 'date', 'language', 'title', 'summary', 'text'
     
+    // Stage 3: do not mix transcript evidence with metadata or legacy deduplication.
+    if ($searchMode === 'simple' && in_array($filterType, ['text', 'title', 'summary'], true)) {
+        return app(\App\Services\StageThreeSearch::class)->search($validated);
+    }
+
     // Handle backward compatibility - convert single word to words array
     if ($word && !empty($word)) {
         $words[] = $word;

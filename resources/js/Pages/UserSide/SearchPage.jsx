@@ -251,7 +251,7 @@ export default function SearchPage() {
       };
 
       // ── HAFIZ NAEEM SPEAKER SEARCH (priority — works in any mode) ──
-      if (speakerFilterActive) {
+      if (speakerFilterActive && selectedSearchType === 'smart') {
         requestBody.search_type = 'smart'; // Forces semantic mode for Hafiz Naeem
 
         // CRITICAL FIX: Only send query/words, NOT speaker filter
@@ -478,7 +478,7 @@ export default function SearchPage() {
       setIsSearching(true);
       setSearchError(null);
       fetchSearchResults(abortController.signal, trimmedSearch, false);
-    } else if (['speaker', 'title', 'summary', 'transcript'].includes(selectedSearchType) && trimmedSearch.length >= 1) {
+    } else if (['speaker', 'title', 'summary', 'transcript', 'transcript_literal', 'transcript_alias'].includes(selectedSearchType) && trimmedSearch.length >= 1) {
       console.log(`✅ Starting ${selectedSearchType} search...`);
       setIsSearching(true);
       setSearchError(null);
@@ -522,7 +522,7 @@ export default function SearchPage() {
 
     if (selectedSearchType === 'date') return hasDateFilter;
     if (selectedSearchType === 'language') return selectedLanguage !== '';
-    if (['speaker', 'title', 'summary', 'transcript'].includes(selectedSearchType)) {
+    if (['speaker', 'title', 'summary', 'transcript', 'transcript_literal', 'transcript_alias'].includes(selectedSearchType)) {
       if (numericSearch) return trimmedSearch.length >= 2;
       return trimmedSearch.length >= 1;
     }
@@ -921,7 +921,9 @@ export default function SearchPage() {
                 <MenuItem value="date">📅 Search by Date</MenuItem>
                 <MenuItem value="language">🌐 Search by Language</MenuItem>
                 <MenuItem value="summary">📄 Search in Summary</MenuItem>
-                <MenuItem value="transcript">🔤 Search in Transcript</MenuItem>
+                <MenuItem value="transcript">🔤 Transcript — normalized text</MenuItem>
+                <MenuItem value="transcript_literal">🔤 Transcript — literal text</MenuItem>
+                <MenuItem value="transcript_alias">🔤 Transcript — configured aliases</MenuItem>
               </Select>
             </FormControl>
           </Box>

@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { evidenceParts, passageSeekSeconds, buildEvidenceClips } from '../../resources/js/utils/transcriptEvidence.js';
+import { preservePassages, appendSemanticPage } from '../../resources/js/utils/semanticResults.js';
+const text = '😀 I.P.P. and IPP';
+const spans = [{ start: 2, end: 7 }, { start: 13, end: 16 }];
+assert.equal(evidenceParts(text, spans).map(p=>p.text).join(''), text);
+assert.deepEqual(evidenceParts(text, spans).filter(p=>p.matched).map(p=>p.text), ['I.P.P','IPP']);
+assert.equal(passageSeekSeconds({start_time:8,end_time:18}),8);
+assert.equal(passageSeekSeconds({start_time:0,end_time:8}),0);
+assert.equal(passageSeekSeconds({start_time:8,end_time:0}),null);
+const exact={video:{id:981,title:'Fuuast'},best_score:100,occurrence_count:2,segments:[{segment_id:'a',start_time:8,end_time:18,occurrence_count:2}]};
+const partial={video:{id:734,title:'00089'},best_score:90,match_count:99,segments:[]};
+assert.deepEqual(preservePassages([exact,partial]).map(v=>v.video.id),[981,734]);
+assert.equal(preservePassages([exact])[0].occurrence_count,2);
+assert.deepEqual(appendSemanticPage([exact],[exact]),preservePassages([exact]));
+const source=fs.readFileSync(new URL('../../resources/js/Pages/UserSide/SearchedPage.jsx',import.meta.url),'utf8');
+assert.ok(source.includes("searchMetadata?.search_contract?.authority === 'python_contract_v1'"));
+assert.ok(source.includes('evidenceParts(displayText, seg.match_spans)'));
+assert.ok(source.includes('passageSeekSeconds(seg) === null'));
+const search=fs.readFileSync(new URL('../../resources/js/Pages/UserSide/SearchPage.jsx',import.meta.url),'utf8');
+assert.ok(search.includes("speakerFilterActive && selectedSearchType === 'smart'"));
+console.log('Stage 3 evidence, counts, ordering, Unicode spans and seek checks passed');
+
+const clips=buildEvidenceClips([{segment_id:'a',start_time:8,end_time:18,text:'IPP',match_spans:[{start:0,end:3}]},
+  {segment_id:'b',start_time:9,end_time:12,text:'IPP',match_spans:[{start:0,end:3}]}]);
+assert.deepEqual(clips.map(c=>[c.start,c.end]),[[8,18],[9,12]]);
+assert.deepEqual(clips.map(c=>c.source_segment_id),['a','b']);
+assert.equal(buildEvidenceClips([{start_time:8,end_time:18}]),null);
+const player=fs.readFileSync(new URL('../../resources/js/Pages/UserSide/MainVideoPage/index.jsx',import.meta.url),'utf8');
+assert.ok(player.includes('const searchClips = evidenceClips ?? mergedClips;'));
+assert.ok(player.includes('playerSeekTo(searchClips[0].start)'));
+assert.ok(source.includes("sessionStorage.setItem('searchSegments', JSON.stringify([seg]))"));

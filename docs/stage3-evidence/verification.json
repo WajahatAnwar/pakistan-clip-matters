@@ -1,0 +1,51 @@
+{
+  "baseline_revision": "6ac18004db94e1576b8548d80a1b961914308646",
+  "production_working_tree_status": "",
+  "python_tests": {
+    "passed": 81
+  },
+  "focused_php": {
+    "tests": 35,
+    "assertions": 180,
+    "peak_memory_mb": 71
+  },
+  "full_php": {
+    "tests": 64,
+    "assertions": 224,
+    "failures": 17,
+    "errors": 2,
+    "same_failure_identities_as_baseline": true
+  },
+  "javascript": "existing and Stage 3 checks passed",
+  "frontend_build": "passed, isolated output /tmp/clipsmatter-stage3-build",
+  "integration": "Qdrant persistent local engine, synthetic evidence oracle; staging not validated",
+  "production_deployed": false,
+  "production_repairs_executed": false,
+  "file_sha256": {
+    "Clip matter py  embeding/.env.example": "9598fedf98f4a076645190f0da085750b111295980b29897d9242bb369093dc6",
+    "Clip matter py  embeding/Dockerfile": "243339c1ed0960d6613046a587ffd21709fab638e6f65d95f7cad6e275508919",
+    "Clip matter py  embeding/embeddings_test.py": "5328cfa5eab1595355a5d8dbc615ac64329f8aa70c0cb4575e03f55a588ac4f4",
+    "Clip matter py  embeding/semantic_passage_evidence.py": "4a434be9f5109545aacb4b8ff466903671584ea14508a6e3d71b8c8fbead6ffa",
+    "app/Http/Controllers/VideoController.php": "32a3f3e53b3eff20def31a175da23aab49188a4d68613e7ec1a1331bb07dfc00",
+    "resources/js/Pages/UserSide/MainVideoPage/index.jsx": "37ee6aefc1130bfd462f1d415521357b17f8e1b9dc0f5f645c1d4079b61dafeb",
+    "resources/js/Pages/UserSide/SearchPage.jsx": "8fffdb20848d6be7e85bae414250b17a12d54d63851438ca84361494b21e0c16",
+    "resources/js/Pages/UserSide/SearchedPage.jsx": "08cc2f6732a2f5c5e4f89ed648ca6e8da508d821636cffe0ccf565377ec4d135",
+    "Clip matter py  embeding/transcript_search_contract.py": "9501a663f78f818d03b6b6620fa34f8c8785dcde773db7a778c1639cc405f652",
+    "Clip matter py  embeding/search_contract_v1.json": "cddb2e155a7dd9d55a38baea5c007f6e23a91ba6990c95209e7429320c269bbb",
+    "Clip matter py  embeding/backfill_transcript_contract.py": "38a880b9a3a91c706d1a0b77461782ce2603bd3bf1b5cad5fa01fed39fd126d1",
+    "Clip matter py  embeding/tests/test_stage_three_contracts.py": "202d468ab5a2469042fb2b0242e71eef9438d658659ece73ede0a53df0e2c26a",
+    "app/Services/StageThreeSearch.php": "45a38110d793d835ac87a06e541d2d97dd020501e9c1a13a46c0ebaa87d3365c",
+    "app/Services/TranscriptSearchContract.php": "bbe83513dfc279b95b53fda3174cea55ed6ce1982034e77ad75632ae8ccd2c98",
+    "tests/Feature/StageThreeSearchTest.php": "dac00d6ac046bbb00c31ab7b1abb82f815d5e534f9db5c2b1fc20180b092feee",
+    "resources/js/utils/transcriptEvidence.js": "65f8a0d8fe1cd7cb97bb2b0a353fd4a3d0087d69f5281c397a66db873053042e",
+    "tests/js/stageThreeEvidence.test.mjs": "217b9937ab61ef1100dffb7e4fb406834f052b2a020192fea8fab252cb341451",
+    "tools/integration/run_stage3_local.py": "11d8436eb8f61efc2d3bfa7b734ae076265c747b635aeed498125d089507cd3f",
+    "tools/evaluation/benchmark_stage3_transcripts.py": "dcf71405908a0c769b4f4f9d2204a7d579edeff9c24f1b21dcbe62bda7305ada",
+    "docs/STAGE_3_IMPLEMENTATION.md": "f3e29249a9b26f4b13e89339bdaa00841fc90af965df0a5ef575d5b87c4c78d9",
+    "docs/stage3-evidence/summary-audit.json": "7f2e1c7a4dd1f9daaa00a9c92f7d2149995af1828c1ed1f4ebf2982bb5212403",
+    "docs/stage3-evidence/qdrant-local.json": "30a8fc216659b9fb38cf6d75b590cae7bc4b6df76860c8e355cb71a1ad332ace",
+    "docs/stage3-evidence/production-before.json": "d11050a51ea2f28e3baa6af60039b01701b398974788416f712f8569403b381b",
+    "docs/stage3-evidence/memory.json": "28dc0ad008c5ccb3ccfb575c050549dc05f3acfe422a6178be19e9f6c82f8e0a",
+    "docs/stage3-evidence/local-indexed-text-comparison.json": "0d544b7625e7f3c64f9965d6850fd41f06d7455e802e6ff0bcfdc9277bcdb8df"
+  }
+}

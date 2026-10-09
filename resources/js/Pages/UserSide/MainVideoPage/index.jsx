@@ -1,3 +1,4 @@
+import { buildEvidenceClips } from '@/utils/transcriptEvidence';
 import UserAuthenticateLayout from '@/Layouts/UserAuthenticateLayout';
 import React, { useState, useRef, useEffect } from 'react';
 import { Box, Typography, Tabs, Tab, Button, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
@@ -485,7 +486,10 @@ export default function index() {
             }
           });
           
-          const searchClips = mergedClips;
+          // Authoritative evidence keeps exact seconds, identity and backend order.
+          const evidenceClips = buildEvidenceClips(segmentsFromSearch);
+          const searchClips = evidenceClips ?? mergedClips;
+          searchClips.forEach(clip => { clip.thumbnail = clip.thumbnail || getClipThumbnail(); });
           // Re-assign sequential IDs
           searchClips.forEach((clip, index) => {
             clip.id = `search-${index}`;

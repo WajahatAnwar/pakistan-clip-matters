@@ -1,340 +1,49 @@
 <?php
-
 namespace App\Services;
-
 use Illuminate\Support\Facades\Log;
-
 class SpeakerTaggingService
 {
-    /**
-     * Tag speakers in transcript data using diarization results
-     * 
-     * This method maps AssemblyAI speakers (A, B, C, D) to actual names from Pyannote.
-     * 
-     * Data Flow:
-     * 1. AssemblyAI returns utterances with speakers: A, B, C, D (timestamps in milliseconds)
-     * 2. Pyannote returns identification: SPEAKER_00→"Imran Khan" (timestamps in seconds)
-     * 3. This service matches them by timestamp overlap
-     * 
-     * @param array $transcriptData Transcript data with speakers A, B, etc. (timestamps in milliseconds)
-     * @param array $diarizationData Speaker diarization data with actual names (timestamps in seconds)
-     * @return array Tagged transcript with actual speaker names
-     */
-    public function tagSpeakers(array $transcriptData, array $diarizationData): array
-    {
-        Log::info('Starting speaker tagging', [
-            'transcript_segments' => count($transcriptData),
-            'diarization_segments' => count($diarizationData)
-        ]);
-
-        // Create mapping from transcript speakers (A, B, C, D) to actual names
-        $speakerMapping = [];
-        $speakerVotes = []; // Track which actual speaker each letter maps to (voting system)
-        
-        // Process each transcript segment
-        foreach ($transcriptData as &$segment) {
-            if (!isset($segment['speaker'], $segment['start'], $segment['end'])) {
-                continue;
-            }
-            
-            // Convert milliseconds to seconds for comparison
-            $startTimeSeconds = $segment['start'] / 1000;
-            $endTimeSeconds = $segment['end'] / 1000;
-            $midpointSeconds = ($startTimeSeconds + $endTimeSeconds) / 2;
-            
-            // Find matching speaker from diarization data
-            $actualSpeaker = $this->findMatchingSpeaker(
-                $midpointSeconds, 
-                $startTimeSeconds, 
-                $endTimeSeconds, 
-                $diarizationData
-            );
-            
-            if ($actualSpeaker) {
-                $transcriptSpeaker = $segment['speaker']; // A, B, C, D
-                $diarizationSpeaker = $actualSpeaker['diarizationSpeaker'] ?? null; // SPEAKER_00, SPEAKER_01
-                $actualName = $actualSpeaker['speaker'] ?? $actualSpeaker['match'] ?? null; // Imran Khan, Junaid Akram
-
-                if ($actualName) {
-                    // Initialize voting array for this speaker letter
-                    if (!isset($speakerVotes[$transcriptSpeaker])) {
-                        $speakerVotes[$transcriptSpeaker] = [];
-                    }
-                    
-                    // Vote for this actual name
-                    if (!isset($speakerVotes[$transcriptSpeaker][$actualName])) {
-                        $speakerVotes[$transcriptSpeaker][$actualName] = 0;
-                    }
-                    $speakerVotes[$transcriptSpeaker][$actualName]++;
-                    
-                    // Add actual speaker name to the segment
-                    $segment['actualSpeaker'] = $actualName;
-                    if ($diarizationSpeaker) {
-                        $segment['diarizationSpeaker'] = $diarizationSpeaker;
-                    }
-                    $segment['confidence'] = $actualSpeaker['match'] ?? null;
-                }
-            }
-            
-            // Also tag individual words if they exist
-            if (isset($segment['words']) && is_array($segment['words'])) {
-                foreach ($segment['words'] as &$word) {
-                    if (!isset($word['start'], $word['end'])) {
-                        continue;
-                    }
-                    
-                    $wordStartSeconds = $word['start'] / 1000;
-                    $wordEndSeconds = $word['end'] / 1000;
-                    $wordMidpoint = ($wordStartSeconds + $wordEndSeconds) / 2;
-                    
-                    $wordSpeaker = $this->findMatchingSpeaker(
-                        $wordMidpoint,
-                        $wordStartSeconds,
-                        $wordEndSeconds,
-                        $diarizationData
-                    );
-                    
-                    if ($wordSpeaker) {
-                        $wordActualName = $wordSpeaker['speaker'] ?? $wordSpeaker['match'] ?? null;
-                        if ($wordActualName) {
-                            $word['actualSpeaker'] = $wordActualName;
-                        }
-                        if (isset($wordSpeaker['diarizationSpeaker'])) {
-                            $word['diarizationSpeaker'] = $wordSpeaker['diarizationSpeaker'];
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Build final speaker mapping using voting (most common match wins)
-        foreach ($speakerVotes as $letter => $votes) {
-            if (!empty($votes)) {
-                arsort($votes); // Sort by vote count descending
-                $speakerMapping[$letter] = array_key_first($votes);
-            }
-        }
-
-        // Second pass: Apply consistent mapping to segments without actualSpeaker
-        foreach ($transcriptData as &$segment) {
-            if (!isset($segment['actualSpeaker']) && isset($segment['speaker']) && isset($speakerMapping[$segment['speaker']])) {
-                $segment['actualSpeaker'] = $speakerMapping[$segment['speaker']];
-            }
-        }
-
-        Log::info('Speaker tagging completed', [
-            'speaker_mapping' => $speakerMapping,
-            'votes' => $speakerVotes
-        ]);
-        
-        return [
-            'taggedTranscript' => $transcriptData,
-            'speakerMapping' => $speakerMapping,
-            'statistics' => $this->getStatistics($transcriptData, $speakerMapping)
-        ];
-    }
-    
-    /**
-     * Build mapping from diarization speakers to actual names
-     */
-    private function buildSpeakerMapping(array $diarizationData): array
-    {
-        $mapping = [];
-        
-        foreach ($diarizationData as $segment) {
-            if (isset($segment['diarizationSpeaker'], $segment['speaker'])) {
-                $diarizationSpeaker = $segment['diarizationSpeaker']; // SPEAKER_00, SPEAKER_01
-                $actualName = $segment['speaker']; // Imran Khan, Junaid Akram
-                
-                // Map diarization speaker to actual name
-                if (!isset($mapping[$diarizationSpeaker])) {
-                    $mapping[$diarizationSpeaker] = $actualName;
-                }
-            }
-        }
-        
-        return $mapping;
-    }
-    
-    /**
-     * Find the matching speaker for a given time range
-     * 
-     * This method uses multiple strategies to find the best match:
-     * 1. Primary: Maximum overlap between transcript segment and diarization segment
-     * 2. Secondary: Midpoint falls within diarization segment
-     * 3. Fallback: Closest diarization segment by time
-     */
-    private function findMatchingSpeaker(
-        float $midpoint, 
-        float $startTime, 
-        float $endTime, 
-        array $diarizationData
-    ): ?array {
-        $bestMatch = null;
-        $maxOverlap = 0;
-        $closestDistance = PHP_FLOAT_MAX;
-        $closestMatch = null;
-        
-        foreach ($diarizationData as $diarizationSegment) {
-            if (!isset($diarizationSegment['start'], $diarizationSegment['end'])) {
-                continue;
-            }
-            
-            $diaStart = (float) $diarizationSegment['start'];
-            $diaEnd = (float) $diarizationSegment['end'];
-            
-            // Calculate overlap between transcript segment and diarization segment
-            $overlapStart = max($startTime, $diaStart);
-            $overlapEnd = min($endTime, $diaEnd);
-            $overlap = max(0, $overlapEnd - $overlapStart);
-            
-            // Check if midpoint falls within diarization segment
-            $midpointMatch = ($midpoint >= $diaStart && $midpoint <= $diaEnd);
-            
-            // Strategy 1 & 2: Prefer segments with midpoint match and maximum overlap
-            if ($midpointMatch && $overlap > $maxOverlap) {
-                $maxOverlap = $overlap;
-                $bestMatch = $diarizationSegment;
-            }
-            // Also consider overlap without midpoint match (for edge cases)
-            elseif ($overlap > $maxOverlap && !$bestMatch) {
-                $maxOverlap = $overlap;
-                $bestMatch = $diarizationSegment;
-            }
-            // Strategy 3: Track closest segment as fallback
-            $diaMidpoint = ($diaStart + $diaEnd) / 2;
-            $distance = abs($midpoint - $diaMidpoint);
-            if ($distance < $closestDistance) {
-                $closestDistance = $distance;
-                $closestMatch = $diarizationSegment;
-            }
-        }
-        // Use best match if found, otherwise use closest match as fallback
-        // Only use fallback if the distance is reasonable (within 5 seconds)
-        if ($bestMatch) {
-            return $bestMatch;
-        } elseif ($closestMatch && $closestDistance < 5.0) {
-            return $closestMatch;
-        }
-        return null;
-    }
-    
-    /**
-     * Get statistics about speaker tagging
-     */
-    private function getStatistics(array $transcriptData, array $speakerMapping): array
-    {
-        $stats = [
-            'totalSegments' => count($transcriptData),
-            'taggedSegments' => 0,
-            'untaggedSegments' => 0,
-            'speakerCounts' => [],
-            'totalDuration' => 0,
-            'speakerDurations' => []
-        ];
-        
-        foreach ($transcriptData as $segment) {
-            if (isset($segment['actualSpeaker'])) {
-                $stats['taggedSegments']++;
-                $speaker = $segment['actualSpeaker'];
-                
-                if (!isset($stats['speakerCounts'][$speaker])) {
-                    $stats['speakerCounts'][$speaker] = 0;
-                    $stats['speakerDurations'][$speaker] = 0;
-                }
-                
-                $stats['speakerCounts'][$speaker]++;
-                
-                // Calculate duration in seconds
-                if (isset($segment['start'], $segment['end'])) {
-                    $duration = ($segment['end'] - $segment['start']) / 1000;
-                    $stats['speakerDurations'][$speaker] += $duration;
-                    $stats['totalDuration'] += $duration;
-                }
-            } else {
-                $stats['untaggedSegments']++;
-            }
-        }
-        
-        return $stats;
-    }
-    
-    /**
-     * Convert transcript with generic speakers to actual speaker names
-     * This is a simpler version that uses a pre-built mapping
-     */
-    public function applySimpleSpeakerMapping(array $transcriptData, array $mapping): array
-    {
-        // Mapping example: ['A' => 'Imran Khan', 'B' => 'Junaid Akram']
-        foreach ($transcriptData as &$segment) {
-            if (isset($segment['speaker']) && isset($mapping[$segment['speaker']])) {
-                $segment['actualSpeaker'] = $mapping[$segment['speaker']];
-            }
-            
-            // Also update words
-            if (isset($segment['words']) && is_array($segment['words'])) {
-                foreach ($segment['words'] as &$word) {
-                    if (isset($word['speaker']) && isset($mapping[$word['speaker']])) {
-                        $word['actualSpeaker'] = $mapping[$word['speaker']];
-                    }
-                }
-            }
-        }
-        
-        return $transcriptData;
-    }
-    
-    /**
-     * Generate a formatted transcript with speaker names
-     */
-    public function generateFormattedTranscript(array $taggedTranscript): string
-    {
-        $output = [];
-        $currentSpeaker = null;
-        $currentText = [];
-        
-        foreach ($taggedTranscript as $segment) {
-            $speaker = $segment['actualSpeaker'] ?? $segment['speaker'] ?? 'Unknown';
-            $text = $segment['text'] ?? '';
-            $startTime = $this->formatTimestamp($segment['start'] ?? 0);
-            
-            if ($speaker !== $currentSpeaker) {
-                // Save previous speaker's text
-                if ($currentSpeaker && !empty($currentText)) {
-                    $output[] = "$currentSpeaker: " . implode(' ', $currentText);
-                }
-                
-                // Start new speaker
-                $currentSpeaker = $speaker;
-                $currentText = [$text];
-            } else {
-                $currentText[] = $text;
-            }
-        }
-        
-        // Add last speaker's text
-        if ($currentSpeaker && !empty($currentText)) {
-            $output[] = "$currentSpeaker: " . implode(' ', $currentText);
-        }
-        
-        return implode("\n\n", $output);
-    }
-    
-    /**
-     * Format timestamp from milliseconds to HH:MM:SS
-     */
-    private function formatTimestamp(int $milliseconds): string
-    {
-        $seconds = floor($milliseconds / 1000);
-        $hours = floor($seconds / 3600);
-        $minutes = floor(($seconds % 3600) / 60);
-        $secs = $seconds % 60;
-        $ms = $milliseconds % 1000;
-        
-        if ($hours > 0) {
-            return sprintf('%02d:%02d:%02d.%03d', $hours, $minutes, $secs, $ms);
-        }
-        
-        return sprintf('%02d:%02d.%03d', $minutes, $secs, $ms);
-    }
+ public function tagSpeakers(array $transcriptData,array $diarizationData): array {
+  $mapping=[];$tagged=0;
+  foreach($transcriptData as&$s){
+   if(($s['identity_source']??null)==='manual'&&!empty($s['actualSpeaker'])){$tagged++;continue;}
+   if(!empty($s['actualSpeaker'])&&($s['identity_version']??null)!==SpeakerIdentityPolicy::VERSION)$s['previous_identity_for_review']=$s['actualSpeaker'];
+   unset($s['actualSpeaker'],$s['diarizationSpeaker'],$s['recognized_identity']);
+   $s['identity_status']='unknown';$s['identity_source']='audio';$s['identity_version']=SpeakerIdentityPolicy::VERSION;
+   $s['identity_reason']='no_supported_overlap';
+   $match=$this->match($s,$diarizationData);
+   if($match){$s['diarizationSpeaker']=$match['source_speaker'];$s['identity_reason']=$match['reason'];$s['identity_status']=$match['status'];
+    if($match['status']==='accepted'){$s['actualSpeaker']=$match['recognized_identity'];$s['recognized_identity']=$match['recognized_identity'];$tagged++;}
+    $s['identification_score']=$match['best_score']??null;$s['identification_score_kind']='provider_confidence_0_100';
+   }
+   if(isset($s['words'])&&is_array($s['words']))foreach($s['words']as&$word){if(($word['identity_source']??null)==='manual')continue;unset($word['actualSpeaker'],$word['diarizationSpeaker']);$m=$this->match($word,$diarizationData);if($m&&$m['status']==='accepted'){$word['actualSpeaker']=$m['recognized_identity'];$word['diarizationSpeaker']=$m['source_speaker'];}$word['identity_version']=SpeakerIdentityPolicy::VERSION;}unset($word);
+  }unset($s);
+  // No global voting and no propagation into an unsupported turn. The summary
+  // mapping exists only for consistently recognized, fully supported source labels.
+  $labels=[];foreach($transcriptData as$s){$label=$s['speaker']??null;if($label!==null)$labels[$label][]=($s['identity_source']??'')==='manual'?($s['actualSpeaker']??null):(($s['identity_status']??'')==='accepted'?($s['actualSpeaker']??null):null);}
+  foreach($labels as$label=>$names)if(!in_array(null,$names,true)&&count(array_unique($names))===1)$mapping[$label]=$names[0];
+  Log::info('Speaker identity tagging',['version'=>SpeakerIdentityPolicy::VERSION,'segments'=>count($transcriptData),'accepted'=>$tagged,'unknown'=>count($transcriptData)-$tagged]);
+  return ['taggedTranscript'=>$transcriptData,'speakerMapping'=>$mapping,'statistics'=>['totalSegments'=>count($transcriptData),'taggedSegments'=>$tagged,'untaggedSegments'=>count($transcriptData)-$tagged,'speakerCounts'=>array_count_values(array_filter(array_column($transcriptData,'actualSpeaker')))]];
+ }
+ public function generateFormattedTranscript(array $segments): string {
+  $lines=[];
+  foreach($segments as $s){
+   $trusted=($s['identity_source']??null)==='manual'||(($s['identity_status']??null)==='accepted'&&($s['identity_version']??null)===SpeakerIdentityPolicy::VERSION);
+   $name=$trusted?($s['actualSpeaker']??'Unknown Speaker'):'Unknown Speaker';
+   $label=$s['speaker']??'Unlabelled';
+   $lines[]=$name.' ['.$label.']: '.($s['text']??'');
+  }
+  return implode("\n\n",$lines);
+ }
+ private function match(array $s,array $turns): ?array {
+  if(!isset($s['start'],$s['end'])||!is_numeric($s['start'])||!is_numeric($s['end'])||$s['start']<0||$s['end']<=$s['start'])return null;
+  // AssemblyAI source contract is milliseconds; no value-based inference.
+  $start=$s['start']/1000;$end=$s['end']/1000;$sources=[];$matches=[];
+  foreach($turns as$t){if(($t['version']??null)!==SpeakerIdentityPolicy::VERSION||($t['timestamp_unit']??null)!=='seconds'||!isset($t['start'],$t['end'],$t['source_speaker']))continue;
+   $overlap=min($end,$t['end'])-max($start,$t['start']);if($overlap<=0)continue;$sources[$t['source_speaker']]=true;
+   if($overlap/($end-$start)>=config('speaker-identification.mapping_coverage',.8))$matches[]=$t;
+  }
+  if(count($sources)!==1||count($matches)!==1)return null;
+  $m=$matches[0];return in_array($m['status']??null,['unknown','accepted'],true)?$m:null;
+ }
 }

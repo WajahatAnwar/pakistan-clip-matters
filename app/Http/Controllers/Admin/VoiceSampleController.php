@@ -109,14 +109,9 @@ class VoiceSampleController extends Controller
                     return $this->errorResponse('Failed to upload file. File may be too large or storage is unavailable. Maximum allowed size is ' . ini_get('upload_max_filesize'), 422);
                 }
                 
-                // Delete old file only after successful new upload
-                if (Storage::disk('public')->exists($voiceSample->file_path)) {
-                    Storage::disk('public')->delete($voiceSample->file_path);
-                }
-                
                 $duration = $getDuration($filePath);
                 
-                // Validate duration: must be between 15 seconds and 2 minutes (120 seconds)
+                // Validate duration: must be between 15 seconds and 30 seconds
                 if ($duration < 15) {
                     // Delete the uploaded file since it's invalid
                     if (Storage::disk('public')->exists($filePath)) {
@@ -125,19 +120,25 @@ class VoiceSampleController extends Controller
                     return $this->errorResponse('Audio duration must be at least 15 seconds. Current duration: ' . round($duration, 1) . ' seconds.', 422);
                 }
                 
-                if ($duration > 120) {
+                if ($duration > 30) {
                     // Delete the uploaded file since it's invalid
                     if (Storage::disk('public')->exists($filePath)) {
                         Storage::disk('public')->delete($filePath);
                     }
-                    return $this->errorResponse('Audio duration must not exceed 2 minutes (120 seconds). Current duration: ' . round($duration, 1) . ' seconds.', 422);
+                    return $this->errorResponse('Audio duration must not exceed 30 seconds. Current duration: ' . round($duration, 1) . ' seconds.', 422);
                 }
                 
+                $oldPath=$voiceSample->file_path;
                 $voiceSample->file_path = $filePath;
                 $voiceSample->duration = $duration;
             }
             $voiceSample->name = $request->input('name');
+            if ($voiceSample->isDirty(['name','file_path'])) {
+                $voiceSample->voiceprint=null;$voiceSample->pyannote_job_id=null;$voiceSample->validation_state='unreviewed';
+                $voiceSample->quality_review=null;$voiceSample->voiceprint_fingerprint=null;
+            }
             $voiceSample->save();
+            if(isset($oldPath)&&$oldPath!==$voiceSample->file_path)Storage::disk('public')->delete($oldPath);
 
             // Call Pyannote API to create voiceprint for updated file
             if ($request->hasFile('file')) {
@@ -163,7 +164,7 @@ class VoiceSampleController extends Controller
         
         $duration = $getDuration($filePath);
         
-        // Validate duration: must be between 15 seconds and 2 minutes (120 seconds)
+        // Validate duration: must be between 15 seconds and 30 seconds
         if ($duration < 15) {
             // Delete the uploaded file since it's invalid
             if (Storage::disk('public')->exists($filePath)) {
@@ -172,12 +173,12 @@ class VoiceSampleController extends Controller
             return $this->errorResponse('Audio duration must be at least 15 seconds. Current duration: ' . round($duration, 1) . ' seconds.', 422);
         }
         
-        if ($duration > 120) {
+        if ($duration > 30) {
             // Delete the uploaded file since it's invalid
             if (Storage::disk('public')->exists($filePath)) {
                 Storage::disk('public')->delete($filePath);
             }
-            return $this->errorResponse('Audio duration must not exceed 2 minutes (120 seconds). Current duration: ' . round($duration, 1) . ' seconds.', 422);
+            return $this->errorResponse('Audio duration must not exceed 30 seconds. Current duration: ' . round($duration, 1) . ' seconds.', 422);
         }
 
         $voiceSample = VoiceSample::create([
@@ -210,162 +211,43 @@ class VoiceSampleController extends Controller
         return $this->successResponse();
     }
 
-    private function createVoiceprint(VoiceSample $voiceSample)
+    private function createVoiceprint(VoiceSample $sample)
     {
+        // A new generation clears the previous biometric before any request.
+        $sample->update(['voiceprint'=>null,'pyannote_job_id'=>null,'validation_state'=>'unreviewed',
+            'quality_review'=>null,'voiceprint_fingerprint'=>null,'voiceprint_model'=>config('speaker-identification.model'),
+            'voiceprint_revision'=>config('speaker-identification.revision')]);
+        if (!env('PYANNOTE_API_KEY') || !config('speaker-identification.revision')) return;
         try {
-            // Extract filename from file_path (e.g., voice_samples/filename.mp3 -> filename.mp3)
-            $filename = basename($voiceSample->file_path);
-
-            // Generate public URL using the voice-samples route
-            $publicUrl = url('voice-samples/' . $filename);
-            Log::info('Generated public URL for voice sample', [
-                'voice_sample_id' => $voiceSample->id,
-                'public_url' => $publicUrl
-            ]);
-
-            Log::info('Creating voiceprint for voice sample', [
-                'voice_sample_id' => $voiceSample->id,
-                'voice_sample_name' => $voiceSample->name,
-                'filename' => $filename,
-                'url' => $publicUrl
-            ]);
-
-            // Call Pyannote API with webhook
-            $webhookUrl = url('/webhook/pyannote/voiceprint');
-            Log::info('Using webhook URL for Pyannote', [
-                'webhook_url' => $webhookUrl
-            ]); 
-
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . env('PYANNOTE_API_KEY', 'sk_0573c2ea6e7c472ca657e41a61e1287a'),
-                'Content-Type' => 'application/json',
-            ])->post('https://api.pyannote.ai/v1/voiceprint', [
-                        'url' => $publicUrl,
-                        'webhook' => $webhookUrl
-                    ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                Log::info('Pyannote voiceprint created successfully', [
-                    'voice_sample_id' => $voiceSample->id,
-                    'job_id' => $data['jobId'] ?? null,
-                    'status' => $data['status'] ?? null,
-                    'response' => $data
-                ]);
-
-                // Save job_id to database
-                if (isset($data['jobId'])) {
-                    $voiceSample->update(['pyannote_job_id' => $data['jobId']]);
-                    $this->checkVoiceprintStatus($data['jobId'], $voiceSample->id);
-                }
-            } else {
-                Log::error('Pyannote voiceprint creation failed', [
-                    'voice_sample_id' => $voiceSample->id,
-                    'status' => $response->status(),
-                    'error' => $response->body()
-                ]);
-            }
-        } catch (\Exception $e) {
-            Log::error('Exception while creating voiceprint', [
-                'voice_sample_id' => $voiceSample->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-        }
-    }
-
-    private function checkVoiceprintStatus($jobId, $voiceSampleId)
-    {
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . env('PYANNOTE_API_KEY', 'sk_0573c2ea6e7c472ca657e41a61e1287a'),
-            ])->get("https://api.pyannote.ai/v1/jobs/{$jobId}");
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                Log::info('Pyannote voiceprint status checked', [
-                    'voice_sample_id' => $voiceSampleId,
-                    'job_id' => $jobId,
-                    'status' => $data['status'] ?? null,
-                    'voiceprint' => $data['output']['voiceprint'] ?? null,
-                ]);
-
-                // If voiceprint is ready (status = succeeded), save it to database
-                if (isset($data['status']) && $data['status'] === 'succeeded' && isset($data['output']['voiceprint'])) {
-                    $voiceSample = VoiceSample::find($voiceSampleId);
-                    if ($voiceSample) {
-                        $voiceSample->update(['voiceprint' => $data['output']['voiceprint']]);
-                        // Log::info('Voiceprint saved to database', [
-                        //     'voice_sample_id' => $voiceSampleId,
-                        //     'voiceprint_length' => strlen($data['output']['voiceprint'])
-                        // ]);
-                    }
-                }
-            } else {
-                Log::error('Pyannote status check failed', [
-                    'voice_sample_id' => $voiceSampleId,
-                    'job_id' => $jobId,
-                    'status' => $response->status(),
-                    'error' => $response->body()
-                ]);
-            }
-        } catch (\Exception $e) {
-            Log::error('Exception while checking voiceprint status', [
-                'voice_sample_id' => $voiceSampleId,
-                'job_id' => $jobId,
-                'error' => $e->getMessage()
-            ]);
+            $response=Http::connectTimeout(10)->timeout(60)->withToken(env('PYANNOTE_API_KEY'))
+                ->post('https://api.pyannote.ai/v1/voiceprint',[
+                    'url'=>url('voice-samples/'.basename($sample->file_path)),
+                    'model'=>config('speaker-identification.model'),'webhook'=>url('/webhook/pyannote/voiceprint')]);
+            if (!$response->successful() || !is_string($response->json('jobId'))) throw new \RuntimeException('Voiceprint submission failed');
+            $sample->update(['pyannote_job_id'=>$response->json('jobId')]);
+        } catch (\Throwable $e) {
+            Log::warning('Voiceprint provider unavailable',['sample_id'=>$sample->id,'exception_type'=>get_class($e)]);
         }
     }
 
     public function handleVoiceprintWebhook(Request $request)
     {
+        $job=$request->input('jobId');
+        if (!is_string($job) || !$sample=VoiceSample::where('pyannote_job_id',$job)->first()) return response()->json(['message'=>'Stale job'],404);
+        // Verify callback contents using authenticated provider retrieval.
         try {
-            Log::info('Pyannote webhook received', [
-                'payload' => $request->all()
-            ]);
-
-            $jobId = $request->input('jobId');
-            $status = $request->input('status');
-            $voiceprint = $request->input('output.voiceprint');
-
-            // Find voice sample by job ID
-            $voiceSample = VoiceSample::where('pyannote_job_id', $jobId)->first();
-
-            if (!$voiceSample) {
-                Log::warning('Voice sample not found for webhook', [
-                    'job_id' => $jobId
-                ]);
-                return response()->json(['message' => 'Voice sample not found'], 404);
-            }
-
-            // If job succeeded and voiceprint is available, save it
-            if ($status === 'succeeded' && $voiceprint) {
-                $voiceSample->update(['voiceprint' => $voiceprint]);
-
-                Log::info('Voiceprint saved from webhook', [
-                    'voice_sample_id' => $voiceSample->id,
-                    'job_id' => $jobId,
-                    'voiceprint_length' => strlen($voiceprint)
-                ]);
-            } elseif ($status === 'failed') {
-                Log::error('Voiceprint job failed', [
-                    'voice_sample_id' => $voiceSample->id,
-                    'job_id' => $jobId,
-                    'error' => $request->input('error')
-                ]);
-            }
-
-            return response()->json(['message' => 'Webhook processed'], 200);
-
-        } catch (\Exception $e) {
-            Log::error('Exception in voiceprint webhook handler', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json(['message' => 'Internal server error'], 500);
-        }
+            $response=Http::connectTimeout(10)->timeout(60)->withToken(env('PYANNOTE_API_KEY'))->get('https://api.pyannote.ai/v1/jobs/'.rawurlencode($job));
+            if (!$response->successful()) return response()->json(['message'=>'Provider unavailable'],503);
+            if ($response->json('status')!=='succeeded') return response()->json(['message'=>'Not completed'],202);
+            $value=$response->json('output.voiceprint');$hash=\App\Services\SpeakerIdentityPolicy::fingerprint($value);
+            if (!$hash) return response()->json(['message'=>'Invalid voiceprint'],422);
+            if ($sample->voiceprint_fingerprint===$hash) return response()->json(['message'=>'Already processed']);
+            // A replacement upload invalidates old callbacks via the current job ID.
+            VoiceSample::where('id',$sample->id)->where('pyannote_job_id',$job)->update([
+                'voiceprint'=>$value,'voiceprint_fingerprint'=>$hash,'validation_state'=>'unreviewed']);
+            Log::info('Voiceprint ready for review',['sample_id'=>$sample->id,'model'=>$sample->voiceprint_model]);
+            return response()->json(['message'=>'Voiceprint awaiting quality review']);
+        } catch (\Throwable $e) { return response()->json(['message'=>'Provider unavailable'],503); }
     }
 
     /**
@@ -376,7 +258,7 @@ class VoiceSampleController extends Controller
     {
         try {
             Log::info('Pyannote identify webhook received', [
-                'payload' => $request->all()
+                'job_id' => $request->input('jobId')
             ]);
 
             // Process the webhook using AssemblyAiService

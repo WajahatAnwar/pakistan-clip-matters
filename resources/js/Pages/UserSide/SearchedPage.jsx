@@ -1,3 +1,4 @@
+import { evidenceParts, passageSeekSeconds } from '@/utils/transcriptEvidence';
 import { preservePassages, appendSemanticPage } from '@/utils/semanticResults';
 import UserAuthenticateLayout from '@/Layouts/UserAuthenticateLayout';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -127,7 +128,8 @@ export default function SearchedPage() {
   const prefetchedDataRef = React.useRef(null);  // Store prefetched data
 
   const authoritativePassages = searchMetadata?.passage_validation?.authority === 'python_passage_v1';
-  const semanticPresentation = authoritativePassages || searchMode === 'semantic';
+  const contractPresentation = searchMetadata?.search_contract?.authority === 'python_contract_v1';
+  const semanticPresentation = authoritativePassages || contractPresentation || searchMode === 'semantic';
   const [validationRetryError, setValidationRetryError] = useState(null);
   const [retryingValidation, setRetryingValidation] = useState(false);
 
@@ -843,9 +845,9 @@ export default function SearchedPage() {
         {/* Conditional Content Based on Tab */}
         {tabValue === 0 ? (
           <>
-            {(searchMetadata?.passage_validation?.status === 'partial' || validationRetryError) && (
+            {(searchMetadata?.passage_validation?.status === 'partial' || searchMetadata?.search_contract?.status === 'partial' || validationRetryError) && (
               <Box role="status" sx={{ color: '#fbbf24', mb: 2 }}>
-                <Typography>{validationRetryError || 'Search evaluation is incomplete. Only verified passages are shown.'}</Typography>
+                <Typography>{validationRetryError || 'Search evaluation is incomplete. Counts cover only the retained matches; more matches may exist.'}</Typography>
                 <Button onClick={retryPassageValidation} disabled={retryingValidation}>
                   {retryingValidation ? 'Retrying…' : 'Retry search'}
                 </Button>
@@ -857,7 +859,7 @@ export default function SearchedPage() {
                 {t('searchedPage.searchFound')} {totalVideos || parsedVideos.length} {t('searchedPage.results')}
                 {actualTotalSegments > 0 && (
                   <Typography component="span" sx={{ color: '#9CA3AF', fontWeight: 400, fontSize: { xs: '0.8rem', sm: '0.9rem', md: '0.95rem' }, ml: { xs: 1, sm: 2 } }}>
-                    ({actualTotalSegments} matching segments)
+                    ({searchMetadata?.search_contract?.counts?.displayed_passages ?? actualTotalSegments} passages{searchMetadata?.search_contract?.counts?.matched_transcript_occurrences != null ? `, ${searchMetadata.search_contract.counts.matched_transcript_occurrences} transcript occurrences` : ''})
                   </Typography>
                 )}
               </Typography>
@@ -868,7 +870,7 @@ export default function SearchedPage() {
                   </Typography>
                   <Chip
                     label={
-                      searchMode === 'semantic' || searchMode === 'search'
+                      contractPresentation ? `Search: ${searchMetadata.search_contract.contract}` : searchMode === 'semantic' || searchMode === 'search'
                         ? `🧠 AI Smart Search`
                         : searchMode === 'speaker'
                           ? `👤 Speaker Search`
@@ -935,10 +937,10 @@ export default function SearchedPage() {
                   {query ? (
                     <>
                       <Typography sx={{ color: 'white', fontWeight: 600, fontSize: { xs: '1.1rem', sm: '1.3rem', md: '1.5rem' } }}>
-                        {searchMetadata?.passage_validation?.status === 'partial' ? 'No verified passages yet' : t('searchPage.noResults')}
+                        {(searchMetadata?.passage_validation?.status === 'partial' || searchMetadata?.search_contract?.status === 'partial') ? 'No verified passages yet' : t('searchPage.noResults')}
                       </Typography>
                       <Typography sx={{ color: '#9CA3AF', fontSize: { xs: '0.85rem', sm: '0.95rem' }, maxWidth: 440, lineHeight: 1.6 }}>
-                        {searchMetadata?.passage_validation?.status === 'partial' ? 'Please retry the search to continue evaluation.' : t('searchPage.noResultsFor', { query })}
+                        {(searchMetadata?.passage_validation?.status === 'partial' || searchMetadata?.search_contract?.status === 'partial') ? 'Please retry the search to continue evaluation.' : t('searchPage.noResultsFor', { query })}
                       </Typography>
                     </>
                   ) : (
@@ -1019,7 +1021,7 @@ export default function SearchedPage() {
           {result.match_count > 0 && (
             <Box sx={{ position: 'absolute', top: 8, right: 8, bgcolor: '#EE1D52', borderRadius: '12px', px: 1.5, py: 0.5 }}>
               <Typography sx={{ color: 'white', fontSize: '0.75rem', fontWeight: 600 }}>
-                {result.match_count} {result.match_count === 1 ? t('searchedPage.match') : t('searchedPage.matches')}
+                {result.passage_count ?? result.match_count} passages{result.occurrence_count != null ? ` · ${result.occurrence_count} transcript occurrences` : ''}
               </Typography>
             </Box>
           )}
@@ -1040,7 +1042,8 @@ export default function SearchedPage() {
             router.get(route('user.video.page', { id: result.video?.id }));
           }} sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: { xs: 0.5, sm: 1 }, justifyContent: 'center', cursor: 'pointer' }}>
             <Typography sx={{ color: 'white', fontWeight: 600, fontSize: { xs: '0.95rem', sm: '1rem', md: '1.1rem' } }}>
-              {highlightText(result.video?.title || result.video?.filename || 'Untitled Video', query)}
+              {highlightText(result.video?.title || 'Untitled Video', query)}
+              {result.video?.filename && <Typography component="span" sx={{ display: 'block', color: '#9CA3AF', fontSize: '0.7rem' }}>File: {result.video.filename}</Typography>}
           </Typography>
             <Typography sx={{ color: '#9CA3AF', fontSize: { xs: '0.8rem', sm: '0.85rem', md: '0.95rem' }, fontWeight: 500 }}>
             YouTube - Pakistan Matters
@@ -1117,15 +1120,16 @@ export default function SearchedPage() {
           <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
               {(expandedVideoSegments[result.video?.id] ? result.segments : result.segments.slice(0, 3)).filter(seg => {
                 // Hide segments with no real time range (title matches, missing data, etc.)
-                if (!seg.start_time && !seg.end_time) return false;
+                if (passageSeekSeconds(seg) === null) return false;
                 return true;
               }).map((seg, segIdx) => {
                 // Determine match field styling
                 const matchFieldConfig = {
-                  'text': { label: '📝 Spoken Text Match', color: '#F97316', border: '#F97316' },
+                  'text': { label: '📝 Transcript Match', color: '#F97316', border: '#F97316' },
                   'video_title': { label: '🏷️ Title Match', color: '#22C55E', border: '#22C55E' },
                   'speaker': { label: '🎤 Speaker Match', color: '#A855F7', border: '#A855F7' },
                   'diarization_speaker': { label: '🎤 Speaker Match', color: '#A855F7', border: '#A855F7' },
+                  'summary_with_transcript_evidence': { label: '📑 Summary · verified transcript evidence', color: '#EC4899', border: '#EC4899' },
                   'semantic_vector': { label: '🧠 AI Meaning Match', color: '#3B82F6', border: '#3B82F6' },
                   'date_filter': { label: '📅 Date Filter', color: '#F59E0B', border: '#F59E0B' },
                   'Summary_en': { label: '📑 Found in English Summary', color: '#EC4899', border: '#EC4899' },
@@ -1137,7 +1141,14 @@ export default function SearchedPage() {
                 const fieldStyle = matchFieldConfig[fieldKey] || { label: '🔍 Match', color: '#9CA3AF', border: '#9CA3AF' };
 
                 return (
-                  <Box key={segIdx} sx={{
+                  <Box key={seg.segment_id || segIdx} role="button" tabIndex={0}
+                    onClick={() => {
+                      if (passageSeekSeconds(seg) === null) return;
+                      sessionStorage.setItem('searchSegments', JSON.stringify([seg]));
+                      router.get(route('user.video.page', { id: result.video?.id }));
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }}
+                    sx={{ cursor: 'pointer',
                     display: 'flex', alignItems: 'flex-start', gap: 1,
                     px: 1.5, py: 0.75, borderRadius: 1.5,
                     bgcolor: `${fieldStyle.color}08`,
@@ -1171,7 +1182,7 @@ export default function SearchedPage() {
                         return (
                           <Box>
                             <Typography sx={{ color: '#D1D5DB', fontSize: { xs: '0.8rem', sm: '0.85rem' }, fontWeight: 400, lineHeight: 1.4 }}>
-                              {highlightText(displayText, query)}
+                              {seg.match_spans ? evidenceParts(displayText, seg.match_spans).map((part, i) => part.matched ? <mark key={i}>{part.text}</mark> : part.text) : highlightText(displayText, query)}
                             </Typography>
                             {isLong && (
                               <Typography
