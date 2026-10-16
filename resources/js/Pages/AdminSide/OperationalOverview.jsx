@@ -66,7 +66,7 @@ export default function OperationalOverview({ stats }) {
                 detail="Observed in the index audit; not a live coverage check." />
         </Box>
         <Typography sx={{ color: '#9ba7a4', fontSize: 12, mt: 1.75, lineHeight: 1.7 }}>
-            Counts overlap. Completed embedding records do not confirm current index coverage. Remote generated/proxy storage is not inventoried.
+            Counts overlap. Completed embedding records do not confirm current index coverage.
         </Typography>
     </Box>;
 }
