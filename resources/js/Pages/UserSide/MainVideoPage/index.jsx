@@ -1,4 +1,4 @@
-import { buildEvidenceClips } from '@/utils/transcriptEvidence';
+import { passageSeekSeconds } from '@/utils/transcriptEvidence';
 import UserAuthenticateLayout from '@/Layouts/UserAuthenticateLayout';
 import React, { useState, useRef, useEffect } from 'react';
 import { Box, Typography, Tabs, Tab, Button, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
@@ -10,7 +10,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import ScissorsIcon from '@mui/icons-material/ContentCut';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
-import ReactPlayer from 'react-player';
+import ReliableVideoPlayer from '@/components/ReliableVideoPlayer';
 import { router, usePage } from '@inertiajs/react';
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
@@ -21,7 +21,7 @@ import RandomImage from '@/Images/random-data-grid.svg';
 
 export default function index() {
   // Get videoId from route parameter
-  const { props } = usePage();
+  const { props, url: pageUrl } = usePage();
   const videoIdFromRoute = props.videoId;
   const { t } = useTranslation();
   const [tabValue, setTabValue] = useState(0);
@@ -147,6 +147,11 @@ export default function index() {
   const [storedDropboxPath, setStoredDropboxPath] = useState(null);
   const [dbDurationSeconds, setDbDurationSeconds] = useState(null);
   const reactPlayerRef = useRef(null);
+  const reliablePlayerRef = useRef(null);
+  const queuedSeekRef = useRef(null);
+  const videoRequestRef = useRef(0);
+  const videoAbortRef = useRef(null);
+  const [mediaLoadError, setMediaLoadError] = useState(null);
   const dropboxPlayingRef = useRef(false);
 
   // Get clip thumbnail - always use default thumbnail
@@ -158,92 +163,13 @@ export default function index() {
   // UNIFIED PLAYER HELPERS (YouTube + Dropbox)
   // ========================================
   const playerSeekTo = (seconds) => {
-    if (useDropboxPlayer && reactPlayerRef.current) {
-      reactPlayerRef.current.currentTime = seconds;
-      setCurrentTime(seconds);
-    } else if (youtubePlayerRef.current && typeof youtubePlayerRef.current.seekTo === 'function') {
-      youtubePlayerRef.current.seekTo(seconds, true);
-      setCurrentTime(seconds);
-    } else {
-      console.warn('No player available for seeking');
-    }
+    if (reliablePlayerRef.current) reliablePlayerRef.current.seek(seconds);
+    else queuedSeekRef.current = seconds;
   };
-
-  const playerPlay = () => {
-    if (useDropboxPlayer && reactPlayerRef.current) {
-      reactPlayerRef.current.play().catch(e => console.warn('Play failed:', e));
-      setIsPlaying(true);
-    } else if (youtubePlayerRef.current && typeof youtubePlayerRef.current.playVideo === 'function') {
-      youtubePlayerRef.current.playVideo();
-      setIsPlaying(true);
-    }
-  };
-
-  const playerPause = () => {
-    if (useDropboxPlayer && reactPlayerRef.current) {
-      reactPlayerRef.current.pause();
-      setIsPlaying(false);
-    } else if (youtubePlayerRef.current && typeof youtubePlayerRef.current.pauseVideo === 'function') {
-      youtubePlayerRef.current.pauseVideo();
-      setIsPlaying(false);
-    }
-  };
-
-  const isPlayerReady = () => {
-    if (useDropboxPlayer) return !!(reactPlayerRef.current && reactPlayerRef.current.readyState >= 2);
-    return !!(youtubePlayerRef.current && typeof youtubePlayerRef.current.seekTo === 'function');
-  };
-
-  // Switch to Dropbox player when YouTube is unavailable
-  const switchToDropboxPlayer = async (dropboxPath) => {
-    console.log('Switching to Dropbox player for path:', dropboxPath);
-    let streamUrl = temporaryLink;
-
-    if (!streamUrl && dropboxPath) {
-      streamUrl = await getVideoTemporaryLink(dropboxPath);
-    }
-
-    if (streamUrl) {
-      // Destroy YouTube player if it exists
-      if (youtubePlayerRef.current && youtubePlayerRef.current.destroy) {
-        try { youtubePlayerRef.current.destroy(); } catch (e) { }
-        youtubePlayerRef.current = null;
-      }
-      setDropboxStreamUrl(streamUrl);
-      setUseDropboxPlayer(true);
-      setYoutubeError(true);
-
-      // Use DB duration as fallback until ReactPlayer reports actual duration
-      if (dbDurationSeconds && duration === 0) {
-        setDuration(dbDurationSeconds);
-        setVideoEndTime(formatTime(dbDurationSeconds));
-      }
-    } else {
-      Swal.fire({
-        icon: 'error',
-        title: t('mainVideoPage.messages.videoUnavailable'),
-        text: t('mainVideoPage.messages.videoUnavailableText'),
-        confirmButtonColor: '#E11D48',
-      });
-    }
-  };
-
-  // Load YouTube IFrame API
-  useEffect(() => {
-    if (!window.YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-      window.onYouTubeIframeAPIReady = () => {
-        console.log('YouTube IFrame API loaded and ready');
-        setYtApiReady(true);
-      };
-    } else if (window.YT && window.YT.Player) {
-      setYtApiReady(true);
-    }
-  }, []);
+  const playerPlay = () => reliablePlayerRef.current?.play();
+  const playerPause = () => reliablePlayerRef.current?.pause();
+  const isPlayerReady = () => reliablePlayerRef.current?.ready() || false;
+  const switchToDropboxPlayer = async () => { setUseDropboxPlayer(true); };
 
   // Load FFmpeg
   useEffect(() => {
@@ -264,39 +190,6 @@ export default function index() {
     loadFFmpeg();
   }, []);
 
-  // Create YouTube player when API is ready (skip if using Dropbox player)
-  useEffect(() => {
-    if (useDropboxPlayer) return; // Skip YouTube player creation in Dropbox mode
-    if (ytApiReady && videoId && window.YT && window.YT.Player) {
-      // Destroy existing player if any
-      if (youtubePlayerRef.current && youtubePlayerRef.current.destroy) {
-        youtubePlayerRef.current.destroy();
-      }
-
-      console.log('Creating YouTube player for video:', videoId);
-
-      youtubePlayerRef.current = new window.YT.Player('youtube-player', {
-        videoId: videoId,
-        playerVars: {
-          autoplay: 0,
-          controls: 1,
-          modestbranding: 1,
-          rel: 0,
-          fs: 1,
-          disablekb: 0,
-          showinfo: 0,
-          iv_load_policy: 3,  // Hide video annotations
-          cc_load_policy: 0,  // Don't show captions by default
-        },
-        events: {
-          onReady: onYouTubePlayerReady,
-          onStateChange: onYouTubePlayerStateChange,
-          onError: onYouTubePlayerError
-        }
-      });
-    }
-  }, [ytApiReady, videoId, useDropboxPlayer]);
-
   // Extract YouTube video ID from URL - defined early so it can be used in other functions
   const extractVideoId = (url) => {
     const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
@@ -309,25 +202,36 @@ export default function index() {
     if (videoIdFromRoute) {
       console.log('Loading video from database, ID:', videoIdFromRoute);
       loadVideoFromDatabase(videoIdFromRoute);
+      return () => { videoAbortRef.current?.abort(); videoRequestRef.current++; };
     }
   }, [videoIdFromRoute]);
 
   // Function to load video data from database
   const loadVideoFromDatabase = async (dbVideoId) => {
-    setIsLoadingVideo(true);
+    const generation = ++videoRequestRef.current;
+    videoAbortRef.current?.abort();
+    const controller = new AbortController(); videoAbortRef.current = controller;
+    const deadline = setTimeout(() => controller.abort(), 30000);
+    setCurrentVideoId(null); setVideoId(''); setYoutubeUrl(''); setStoredDropboxPath(null);
+    setUseDropboxPlayer(false); setTemporaryLink(null); setDuration(0); setCurrentTime(0);
+    setTranscript([]); setAlternativeTranscript([]); setCustomClips([]); queuedSeekRef.current = null;
+    setMediaLoadError(null); setIsLoadingVideo(true);
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
       const response = await fetch(route('user.youtube.details'), {
         method: 'POST',
         body: JSON.stringify({ video_id: dbVideoId }),
+        signal: controller.signal,
         headers: {
           'X-CSRF-TOKEN': csrfToken,
           'Content-Type': 'application/json'
         }
       });
 
+      if (!response.ok) throw new Error('Video details unavailable');
       const data = await response.json();
-      console.log('Video data from database:', data);
+      if (generation !== videoRequestRef.current) return;
+      if (!data.success || !data.video) throw new Error('Video details unavailable');
 
       if (data.success && data.video) {
         // Set common metadata regardless of player type
@@ -394,29 +298,11 @@ export default function index() {
           setAlternativeTranscript(parsedAltTranscript);
         }
 
-        // Determine player mode: YouTube or Dropbox
+        // Bind both providers to this database video; no metadata refetch by YouTube ID.
         const ytUrl = data.video.youtube_url;
         const extractedId = ytUrl ? extractVideoId(ytUrl) : null;
-
-        if (extractedId) {
-          // Has valid YouTube URL — try YouTube first (will auto-fallback on error)
-          setYoutubeUrl(ytUrl);
-          setVideoId(extractedId);
-
-        // Pre-fetch Dropbox temporary link for clip downloads + fallback
-          if (data.video.dropbox_path) {
-            console.log('Pre-fetching Dropbox temporary link for fallback:', data.video.dropbox_path);
-            await getVideoTemporaryLink(data.video.dropbox_path, extractedId);
-          }
-        } else if (data.video.dropbox_path) {
-          // No YouTube URL — go directly to Dropbox streaming
-          console.log('No YouTube URL, using Dropbox player directly');
-          if (data.duration_seconds) {
-            setDuration(data.duration_seconds);
-            setVideoEndTime(formatTime(data.duration_seconds));
-          }
-          await switchToDropboxPlayer(data.video.dropbox_path);
-        }
+        setYoutubeUrl(ytUrl || ''); setVideoId(extractedId || '');
+        setUseDropboxPlayer(!extractedId && !!data.video.dropbox_path);
 
         // Load speaker mapping
         if (data.video.speaker_mapping) {
@@ -424,16 +310,18 @@ export default function index() {
         }
       }
     } catch (error) {
-      console.error('Error loading video from database:', error);
+      if (generation === videoRequestRef.current) setMediaLoadError('Video details could not be loaded. Please retry.');
     } finally {
-      setIsLoadingVideo(false);
+      clearTimeout(deadline);
+      if (generation === videoRequestRef.current) setIsLoadingVideo(false);
     }
   };
 
   // Process segments from search results and create clips
   useEffect(() => {
     // Retrieve segments from sessionStorage if available
-    const storedSegments = sessionStorage.getItem('searchSegments');
+    const storedIdentity = sessionStorage.getItem('searchSegmentsVideoId');
+    const storedSegments = storedIdentity && String(storedIdentity) !== String(videoIdFromRoute) ? null : sessionStorage.getItem('searchSegments');
 
     if (storedSegments && duration > 0 && (videoId || useDropboxPlayer)) {
       try {
@@ -441,72 +329,26 @@ export default function index() {
         console.log('Creating clips from search segments:', segmentsFromSearch);
 
         if (Array.isArray(segmentsFromSearch) && segmentsFromSearch.length > 0) {
-          const rawSearchClips = segmentsFromSearch
-            .filter(segment => segment.start_time || segment.end_time) // Skip segments with no real time range
-            .map((segment, index) => {
-              const originalStart = segment.start_time || 0;
-              const originalEnd = segment.end_time || (originalStart + 1);
-              
-              // Align to 15-second contextual block boundaries
-              const blockStart = Math.floor(originalStart / 15) * 15;
-              const blockEnd = Math.ceil(originalEnd / 15) * 15;
-
-              return {
-                id: `search-${index}`,
-                start: blockStart,
-                end: blockEnd,
-                thumbnail: getClipThumbnail(),
-                title: `${segment.speaker || 'Speaker'} - ${formatTime(blockStart)}`,
-                speaker: segment.speaker,
-                text: segment.text || segment.text_preview || ''
-              };
-            });
-
-          // Sort clips by start time
-          rawSearchClips.sort((a, b) => a.start - b.start);
-
-          // Merge overlapping or adjacent clips (within 5 seconds)
-          const mergedClips = [];
-          rawSearchClips.forEach(clip => {
-            if (mergedClips.length === 0) {
-              mergedClips.push(clip);
-            } else {
-              const lastClip = mergedClips[mergedClips.length - 1];
-              // If clips overlap or are adjacent (allow up to 5 seconds gap)
-              if (clip.start <= lastClip.end + 5) {
-                // Merge them: extend end time
-                lastClip.end = Math.max(lastClip.end, clip.end);
-                // Combine text if it's new
-                if (clip.text && !lastClip.text.includes(clip.text)) {
-                  lastClip.text += ' ... ' + clip.text;
-                }
-              } else {
-                mergedClips.push(clip);
-              }
-            }
-          });
-          
-          // Authoritative evidence keeps exact seconds, identity and backend order.
-          const evidenceClips = buildEvidenceClips(segmentsFromSearch);
-          const searchClips = evidenceClips ?? mergedClips;
-          searchClips.forEach(clip => { clip.thumbnail = clip.thumbnail || getClipThumbnail(); });
-          // Re-assign sequential IDs
-          searchClips.forEach((clip, index) => {
-            clip.id = `search-${index}`;
-          });
+          // Search passages retain their own boundaries, identities and backend order.
+          const searchClips = segmentsFromSearch.filter(segment =>
+            segment.start_time != null && segment.end_time != null && passageSeekSeconds(segment) !== null
+          ).map((segment, index) => ({
+            id: `search-${segment.segment_id || segment.id || index}`,
+            source_segment_id: segment.segment_id || segment.id,
+            segment_ids: segment.segment_ids,
+            start: passageSeekSeconds(segment), end: Number(segment.end_time),
+            speaker: segment.speaker, text: segment.text || segment.text_preview || '',
+            thumbnail: getClipThumbnail(), title: segment.speaker || 'Transcript passage',
+          }));
+          if (!searchClips.length && segmentsFromSearch.length) setMediaLoadError('The selected passage has invalid timestamps.');
 
           // Add to customClips so they display in the UI
           setCustomClips(searchClips);
 
           if (searchClips.length > 0) {
             setSelectedClip(0);
-            // Jump to the first segment after a short delay to ensure player is ready
-            setTimeout(() => {
-              if (isPlayerReady()) {
-                playerSeekTo(searchClips[0].start);
-                console.log('Jumped to first search result at:', searchClips[0].start);
-              }
-            }, 1000);
+            // The player queues seeks until metadata is ready; no timing guess.
+            playerSeekTo(searchClips[0].start);
           }
 
           console.log('Created', searchClips.length, 'clips from search segments');
@@ -519,7 +361,7 @@ export default function index() {
         sessionStorage.removeItem('searchSegments');
       }
     }
-  }, [duration, videoId, useDropboxPlayer]);
+  }, [duration, videoId, useDropboxPlayer, pageUrl]);
 
   // Fetch YouTube video chapters using backend API
   const fetchYouTubeChapters = async (videoId) => {
@@ -780,12 +622,10 @@ export default function index() {
         // Step 2: Fetch the temporary download link
         const tempLink = await getVideoTemporaryLink(videoPath);
 
-        console.log('Temporary video link:', tempLink);
       } else if (result?.video?.dropbox_path) {
         // Alternative field name
         setStoredDropboxPath(result.video.dropbox_path);
         const tempLink = await getVideoTemporaryLink(result.video.dropbox_path);
-        console.log('Temporary video link from dropbox_path:', tempLink);
       } else {
         console.warn('Video path not returned from validation.');
       }
@@ -797,6 +637,7 @@ export default function index() {
   };
 
   const getVideoTemporaryLink = async (videoPath, youtubeVideoId) => {
+    const generation = videoRequestRef.current;
     try {
       const response = await fetch(route('video.link'), {
         method: 'POST', // Use POST if sending a body
@@ -808,14 +649,9 @@ export default function index() {
       });
 
       const result = await response.json();
+      if (generation !== videoRequestRef.current) return null;
       setTemporaryLink(result?.temporary_link || null);
 
-      // Use the passed YouTube video ID instead of state variable
-      if (youtubeVideoId) {
-        fetchVideoDetails(youtubeVideoId, document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
-      }
-
-      console.log('Temporary link response:', result);
       return result?.temporary_link || null;
     } catch (error) {
       console.error('Failed to fetch temporary video link:', error);
@@ -1073,129 +909,6 @@ export default function index() {
     }
   };
 
-  // YouTube IFrame API onReady event handler
-  const onYouTubePlayerReady = (event) => {
-    console.log('YouTube player ready!');
-
-    // Get video duration
-    const dur = event.target.getDuration();
-    if (dur && dur > 0) {
-      console.log('Video duration:', dur);
-      setDuration(dur);
-      setVideoEndTime(formatTime(dur));
-    }
-
-    // Start time update polling
-    startTimeUpdatePolling();
-  };
-
-  // YouTube IFrame API onStateChange event handler
-  const onYouTubePlayerStateChange = (event) => {
-    console.log('YouTube player state changed:', event.data);
-
-    // -1 (unstarted)
-    // 0 (ended)
-    // 1 (playing)
-    // 2 (paused)
-    // 3 (buffering)
-    // 5 (video cued)
-
-    if (event.data === 1) {
-      // Playing
-      setIsPlaying(true);
-    } else if (event.data === 2) {
-      // Paused
-      setIsPlaying(false);
-    } else if (event.data === 0) {
-      // Ended
-      setIsPlaying(false);
-    }
-  };
-
-  // YouTube IFrame API onError event handler - triggers Dropbox fallback
-  const onYouTubePlayerError = (event) => {
-    // Error codes: 2=invalid param, 5=HTML5 error, 100=not found/private, 101/150=embed blocked
-    console.error('YouTube player error:', event.data);
-    const errorCode = event.data;
-
-    if ([2, 5, 100, 101, 150].includes(errorCode)) {
-      console.log('YouTube video unavailable (error code:', errorCode, '), attempting Dropbox fallback...');
-      const dropboxPath = storedDropboxPath;
-      if (dropboxPath || temporaryLink) {
-        switchToDropboxPlayer(dropboxPath);
-      } else {
-        Swal.fire({
-          icon: 'error',
-          title: t('mainVideoPage.messages.videoUnavailable'),
-          text: t('mainVideoPage.messages.videoUnavailableYt'),
-          confirmButtonColor: '#E11D48',
-        });
-      }
-    }
-  };
-
-  // Start time update polling using YouTube IFrame API (skip in Dropbox mode)
-  const startTimeUpdatePolling = () => {
-    // In Dropbox mode, ReactPlayer handles time updates via onProgress
-    if (useDropboxPlayer) return;
-
-    // Clear any existing interval
-    if (timeUpdateIntervalRef.current) {
-      clearInterval(timeUpdateIntervalRef.current);
-    }
-
-    console.log('Starting YouTube time polling with native API...');
-
-    // Poll current time every 100ms for smooth updates
-    timeUpdateIntervalRef.current = setInterval(() => {
-      if (youtubePlayerRef.current && typeof youtubePlayerRef.current.getCurrentTime === 'function') {
-        try {
-          const currentSeconds = youtubePlayerRef.current.getCurrentTime();
-          const playerState = youtubePlayerRef.current.getPlayerState();
-
-          // Update time if video is loaded
-          if (currentSeconds !== undefined && !isNaN(currentSeconds) && currentSeconds >= 0) {
-            setCurrentTime(currentSeconds);
-
-            // Check if we're previewing a clip and reached its end
-            if (isPreviewingClipRef.current && clipPreviewEndRef.current && currentSeconds >= clipPreviewEndRef.current) {
-              handleStopPreview();
-            }
-
-            // Auto-highlight current transcript (only when playing)
-            if (playerState === 1 && transcript.length > 0) {
-              const activeIndex = transcript.findIndex(
-                (item) => currentSeconds >= item.start && currentSeconds < item.end
-              );
-
-              if (activeIndex !== -1 && activeIndex !== selectedTranscript) {
-                setSelectedTranscript(activeIndex);
-              }
-            }
-          }
-        } catch (error) {
-          // Silently handle errors - player might not be ready yet
-        }
-      }
-    }, 100);
-  };
-
-  // Cleanup interval on unmount
-  useEffect(() => {
-    return () => {
-      if (timeUpdateIntervalRef.current) {
-        clearInterval(timeUpdateIntervalRef.current);
-      }
-    };
-  }, []);
-
-  // Restart polling when transcript changes (to update active transcript tracking)
-  useEffect(() => {
-    if (!useDropboxPlayer && youtubePlayerRef.current && transcript.length > 0) {
-      console.log('Transcript updated, restarting time polling with', transcript.length, 'items');
-    }
-  }, [transcript, useDropboxPlayer]);
-
   const handleCreateClip = () => {
     const start = Math.max(0, currentTime - 5);
     const end = Math.min(duration, currentTime + 5);
@@ -1313,14 +1026,8 @@ export default function index() {
 
 
   const handleClipClick = (clip) => {
-    console.log('Clip clicked:', clip);
-    if (isPlayerReady()) {
-      playerSeekTo(clip.start);
-      console.log('Seeking to:', clip.start, 'seconds');
-      playerPlay();
-    } else {
-      console.error('Player not available');
-    }
+    playerSeekTo(clip.start);
+    playerPlay();
   };
 
   // Preview clip functionality
@@ -1395,7 +1102,6 @@ export default function index() {
 
       setDownloadStatus(t('mainVideoPage.messages.fetchingVideo'));
       setDownloadProgress(20);
-      console.log("Fetching video from:", temporaryLink);
       const fileData = await fetchFile(temporaryLink);
 
       setDownloadStatus(t('mainVideoPage.messages.processingVideo'));
@@ -2431,95 +2137,23 @@ export default function index() {
               overflow: 'hidden',
               aspectRatio: '16/9',
             }}>
-              {useDropboxPlayer && dropboxStreamUrl ? (
-                /* Dropbox Streaming Player (Native HTML5 Video) */
-                <video
-                  ref={reactPlayerRef}
-                  src={dropboxStreamUrl}
-                  controls
-                  playsInline
-                  preload="auto"
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain' }}
-                  onTimeUpdate={(e) => {
-                    const current = e.target.currentTime;
-                    setCurrentTime(current);
+              {mediaLoadError && currentVideoId && <Box role="alert" sx={{ position: 'absolute', bottom: 45, zIndex: 10, color: 'white', bgcolor: '#1a1a1a', p: 2 }}>{mediaLoadError}</Box>}
+              {currentVideoId ? <ReliableVideoPlayer key={String(currentVideoId)} ref={reliablePlayerRef}
+                videoId={currentVideoId} youtube={youtubeUrl} hasDropbox={!!storedDropboxPath}
+                onDuration={dur => {
+                  if (Number.isFinite(dur) && dur > 0) { setDuration(dur); setVideoEndTime(formatTime(dur)); }
+                  if (queuedSeekRef.current !== null) { const target = queuedSeekRef.current; queuedSeekRef.current = null; playerSeekTo(target); }
+                }}
+                onTime={time => {
+                  setCurrentTime(time);
+                  const active = transcript.findIndex(item => time >= item.start && time < item.end);
+                  if (active !== -1) setSelectedTranscript(active);
+                  if (isPreviewingClipRef.current && clipPreviewEndRef.current != null && time >= clipPreviewEndRef.current) handleStopPreview();
+                }} onPlaying={setIsPlaying} onLink={setTemporaryLink} /> :
+                <Box role="status" sx={{ color: 'white', p: 3 }}>{mediaLoadError || (isLoadingVideo ? 'Loading video…' : 'Select a video to play.')}
+                  {mediaLoadError && <Button onClick={() => loadVideoFromDatabase(videoIdFromRoute)}>Retry</Button>}
+                </Box>}
 
-                    // Auto-highlight current transcript
-                    if (transcript.length > 0) {
-                      const activeIndex = transcript.findIndex(
-                        (item) => current >= item.start && current < item.end
-                      );
-                      if (activeIndex !== -1 && activeIndex !== selectedTranscript) {
-                        setSelectedTranscript(activeIndex);
-                      }
-                    }
-
-                    // Check if we're previewing a clip and reached its end
-                    if (isPreviewingClip && clipPreviewEnd && current >= clipPreviewEnd) {
-                      handleStopPreview();
-                    }
-                  }}
-                  onLoadedMetadata={(e) => {
-                    const dur = e.target.duration;
-                    if (dur && dur > 0 && isFinite(dur)) {
-                      console.log('Dropbox video duration:', dur);
-                      setDuration(dur);
-                      setVideoEndTime(formatTime(dur));
-                    }
-                  }}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                  onEnded={() => setIsPlaying(false)}
-                  onError={(e) => {
-                    console.error('Dropbox video error:', e.target.error);
-                    // If Dropbox link expired, try to refresh it
-                    if (storedDropboxPath) {
-                      console.log('Attempting to refresh Dropbox link...');
-                      getVideoTemporaryLink(storedDropboxPath).then(newLink => {
-                        if (newLink) {
-                          setDropboxStreamUrl(newLink);
-                        }
-                      });
-                    }
-                  }}
-                />
-              ) : (
-                /* YouTube IFrame API Player */
-                <Box
-                  id="youtube-player"
-                  sx={{
-                    width: '100%',
-                    height: '100%',
-                    '& iframe': {
-                      width: '100%',
-                      height: '100%',
-                      border: 'none'
-                    }
-                  }}
-                />
-              )}
-
-              {/* Dropbox streaming indicator */}
-              {useDropboxPlayer && (
-                <Box sx={{
-                  position: 'absolute',
-                  top: 8,
-                  left: 8,
-                  bgcolor: 'rgba(16, 185, 129, 0.9)',
-                  color: 'white',
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: 1,
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
-                  zIndex: 10,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                }}>
-                  {t('mainVideoPage.messages.cloudStream')}
-                </Box>
-              )}
             </Box>
 
             {/* Timeline Section (Image 3) - Below Video with Golden Markers */}

@@ -626,7 +626,11 @@ class VideoController extends Controller
                 case 'speaker':
                     $searchMode = 'simple';
                     $filterType = 'speaker';
-                    if (empty($query)) abort(response()->json(['success' => false, 'message' => 'Speaker search requires a speaker name', 'errors' => ['query' => ['Speaker name is required']]], 422));
+                    $query = trim((string) ($validated['speaker'] ?? '')) !== ''
+                        ? trim($validated['speaker']) : trim((string) $query);
+                    if ($query === '') abort(response()->json(['success' => false, 'message' => 'Speaker search requires a speaker name', 'errors' => ['query' => ['Speaker name is required']]], 422));
+                    $validated['query'] = $query;
+                    $validated['speaker'] = $query;
                     break;
                 case 'title':
                     $searchMode = 'simple';
@@ -3218,97 +3222,47 @@ class VideoController extends Controller
         ]);
     }
 
-    public function dropboxVideoTemporaryLink(Request $request){
-        Log::info('Dropbox temporary link request received', [
-            'request' => $request->all()
+    public function dropboxVideoTemporaryLink(Request $request)
+    {
+        abort_unless($request->user(), 401);
+        $input=$request->validate([
+            'video_id'=>'nullable|integer|min:1|required_without:dropbox_path',
+            'dropbox_path'=>'nullable|string|max:2000|required_without:video_id',
+            'refresh'=>'sometimes|boolean', 'link_id'=>'nullable|string|max:64',
         ]);
-        
-        // Validate that either dropbox_path or video_id is provided
-        $request->validate([
-            'dropbox_path' => 'required_without:video_id|string|nullable',
-            'video_id' => 'required_without:dropbox_path|integer|nullable'
-        ]);
-        
-        $dropboxPath = null;
-        $video = null;
-
-        // Get dropbox_path either directly or from video_id
-        if ($request->has('video_id') && $request->video_id) {
-            // Fetch video by ID
-            $video = Video::find($request->video_id);
-            
-            if (!$video) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Video not found'
-                ], 404);
-            }
-            
-            if (!$video->dropbox_path) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Video does not have a Dropbox path'
-                ], 404);
-            }
-            
-            $dropboxPath = $video->dropbox_path;
-            Log::info('Using dropbox_path from video_id', [
-                'video_id' => $video->id,
-                'dropbox_path' => $dropboxPath
-            ]);
-        } else {
-            // Use dropbox_path directly
-            $dropboxPath = $request->dropbox_path;
-            
-            // Find the video with this dropbox_path to get the owner
-            $video = Video::where('dropbox_path', $dropboxPath)
-                ->first();
-            Log::info('Using dropbox_path directly', ['dropbox_path' => $dropboxPath]);
-        }
-
-        // Use video owner if found, otherwise use Super Admin for Dropbox access
-        $user = null;
-        if ($video && $video->user) {
-            $user = $video->user;
-            Log::info('Using video owner for Dropbox access', ['user_id' => $user->id]);
-        } else {
-            // Fallback: use Super Admin who holds the Dropbox credentials
-            $user = User::getSuperAdmin();
-            Log::info('Using Super Admin for Dropbox access', ['user_id' => $user ? $user->id : null]);
-        }
-        
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No user with Dropbox access found'
-            ], 404);
-        }
-        
+        $video=isset($input['video_id']) ? Video::find($input['video_id'])
+            : Video::where('dropbox_path',$input['dropbox_path'])->first();
+        if (!$video || !$video->dropbox_path) return response()->json(['success'=>false,'code'=>'media_missing','message'=>'Video media was not found.'],404);
+        $viewer=$request->user();
+        $privileged=$viewer->id===$video->user_id || $viewer->hasAnyRole(['superAdmin','admin']);
+        if (!$privileged && ($video->approval_status!=='approved' || $video->processing_status!=='completed' || $video->is_archived)) abort(403);
+        // Never resolve caller-supplied paths with privileged credentials.
+        $owner=$video->user ?: User::getSuperAdmin();
+        if (!$owner) return response()->json(['success'=>false,'code'=>'media_access','message'=>'Media access is unavailable.'],503);
+        $key='playback:v1:'.$viewer->id.':'.$owner->id.':'.$video->id.':'.hash('sha256',$video->dropbox_path);
         try {
-            $dropboxService = new DropboxService($user);
-            
-            // Get temporary link directly - will throw exception if file not found
-            $link = $dropboxService->getTemporaryLink($dropboxPath);
-            return response()->json([
-                'success' => true,
-                'temporary_link' => $link
-            ]);
-        } catch (\Exception $e) {
-            // Check if it's a file not found error
-            if (str_contains($e->getMessage(), 'not_found') || str_contains($e->getMessage(), 'path/not_found')) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'File not found in Dropbox'
-                ], 404);
-            }
-            Log::error('Error fetching Dropbox temporary link', [
-                'dropbox_path' => $dropboxPath,
-                'error' => $e->getMessage()
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Error fetching temporary link: ' . $e->getMessage()
-            ], 500);
+            $result=Cache::lock($key.':lock',40)->block(3,function()use($key,$input,$owner,$video){
+                $cached=Cache::get($key);
+                // Coalesce simultaneous renewal of the same failed generation.
+                $refresh=($input['refresh']??false) && $cached && ($input['link_id']??null)===$cached['link_id'];
+                if ($cached && !$refresh) return $cached;
+                $link=(new DropboxService($owner))->getTemporaryLink($video->dropbox_path,true);
+                if (!is_string($link) || !filter_var($link,FILTER_VALIDATE_URL) || parse_url($link,PHP_URL_SCHEME)!=='https') throw new \RuntimeException('Media provider unavailable');
+                $result=['success'=>true,'video_id'=>$video->id,'temporary_link'=>$link,'link_id'=>bin2hex(random_bytes(16)),
+                    'expires_at'=>now()->addHours(3)->toIso8601String()];
+                Cache::put($key,$result,now()->addHours(3));
+                return $result;
+            });
+            return response()->json($result)->header('Cache-Control','private, no-store');
+        } catch (\DomainException $e) {
+            $missing=$e->getCode()===404;
+            return response()->json(['success'=>false,'code'=>$missing?'media_missing':'provider_access',
+                'message'=>$missing?'Video media was not found in Dropbox.':'Dropbox access is unavailable. Please contact an administrator.'],$missing?404:503);
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            return response()->json(['success'=>false,'code'=>'media_busy','message'=>'Media is being refreshed. Please retry.'],503);
+        } catch (\Throwable $e) {
+            Log::warning('Playback link unavailable',['video_id'=>$video->id,'exception_type'=>get_class($e)]);
+            return response()->json(['success'=>false,'code'=>'media_unavailable','message'=>'Media could not be loaded. Please retry.'],503);
         }
     }
 

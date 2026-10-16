@@ -992,6 +992,7 @@ export default function SearchedPage() {
             // Store segments in sessionStorage to pass to video page
             if (result.segments && result.segments.length > 0) {
               sessionStorage.setItem('searchSegments', JSON.stringify(result.segments));
+              sessionStorage.setItem('searchSegmentsVideoId', String(result.video?.id));
               console.log('✅ Stored', result.segments.length, 'segments in sessionStorage');
             }
             if (query) {
@@ -1033,6 +1034,7 @@ export default function SearchedPage() {
             // Store segments in sessionStorage to pass to video page
             if (result.segments && result.segments.length > 0) {
               sessionStorage.setItem('searchSegments', JSON.stringify(result.segments));
+              sessionStorage.setItem('searchSegmentsVideoId', String(result.video?.id));
               console.log('✅ Stored', result.segments.length, 'segments');
             }
             if (query) {
@@ -1145,6 +1147,7 @@ export default function SearchedPage() {
                     onClick={() => {
                       if (passageSeekSeconds(seg) === null) return;
                       sessionStorage.setItem('searchSegments', JSON.stringify([seg]));
+              sessionStorage.setItem('searchSegmentsVideoId', String(result.video?.id));
                       router.get(route('user.video.page', { id: result.video?.id }));
                     }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }}
@@ -1242,6 +1245,7 @@ export default function SearchedPage() {
                 // Store segments in sessionStorage to pass to video page
                 if (result.segments && result.segments.length > 0) {
                   sessionStorage.setItem('searchSegments', JSON.stringify(result.segments));
+              sessionStorage.setItem('searchSegmentsVideoId', String(result.video?.id));
                 } else {
                   console.warn('⚠️ No segments to store');
                 }

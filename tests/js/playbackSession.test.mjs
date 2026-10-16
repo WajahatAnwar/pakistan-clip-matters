@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { PlaybackSession, seekSeconds, youtubeId } from '../../resources/js/utils/playbackSession.js';
+const media = id => ({ video_id: id, temporary_link: 'https://media.example/video', link_id: 'generation' });
+function fixture(extra = {}) { const views = [], seeks = []; let calls = 0;
+ const s = new PlaybackSession({ videoId: 1, youtube: 'abcdefghijk', dropbox: true,
+  fetchLink: async () => { calls++; return media(1); }, change: v => views.push(v), ...extra });
+ const adapter = { seek: t => seeks.push(t), play: async () => {}, pause: () => {} };
+ return { s, views, seeks, adapter, calls: () => calls }; }
+test('valid primary needs no Dropbox request', async () => { const f=fixture(); await f.s.start(); f.s.ready(f.adapter,100); assert.equal(f.s.provider,'youtube'); assert.equal(f.calls(),0); });
+test('primary failure falls back once, preserving position', async () => { const f=fixture(); await f.s.start(); f.s.ready(f.adapter,100); f.s.progress(12.5); await f.s.fail('availability'); f.s.ready(f.adapter,100); assert.equal(f.s.provider,'dropbox'); assert.equal(f.seeks.at(-1),12.5); });
+test('both providers unavailable never bounce', async () => { const f=fixture({fetchLink:async()=>{throw Error();}}); await f.s.start(); await f.s.fail('availability'); assert.equal(f.s.state,'failed'); assert.equal(f.s.attempted.size,2); });
+test('expired native link renews once preserving intended timestamp', async () => { const f=fixture({youtube:null}); await f.s.start(); f.s.seek(9.75); await f.s.fail('network'); f.s.ready(f.adapter,100); assert.equal(f.seeks.at(-1),9.75); assert.equal(f.calls(),2); await f.s.fail('network'); assert.equal(f.s.state,'failed'); assert.equal(f.calls(),2); });
+test('renewal failure is terminal with no other provider', async () => { let count=0; const f=fixture({youtube:null,fetchLink:async()=>{if(++count>1)throw Error();return media(1);}}); await f.s.start(); await f.s.fail('network'); assert.equal(f.s.state,'failed'); assert.equal(count,2); });
+test('initial seek waits for readiness and known duration', () => { const f=fixture(); f.s.seek(0); assert.deepEqual(f.seeks,[]); f.s.ready(f.adapter,0); assert.deepEqual(f.seeks,[]); f.s.metadata(100); assert.deepEqual(f.seeks,[0]); });
+test('fractional seeks and rapid same-video changes keep last intent', () => { const f=fixture(); f.s.seek(8.25); f.s.seek(14.875); f.s.ready(f.adapter,100); assert.deepEqual(f.seeks,[14.875]); f.s.seek(20.5); assert.equal(f.seeks.at(-1),20.5); });
+test('invalid negative and out of duration seeks are visible, never clamped', () => { for(const t of [-1,NaN,Infinity,'3',null])assert.throws(()=>seekSeconds(t)); const f=fixture(); f.s.ready(f.adapter,10); f.s.seek(11); assert.deepEqual(f.seeks,[]); assert.match(f.views.at(-1).message,/outside/); });
+test('stale link response ignored on cleanup/video switch', async () => { let resolve; const f=fixture({youtube:null,fetchLink:()=>new Promise(r=>resolve=r)}); const request=f.s.start(); f.s.dispose(); resolve(media(1)); await request; assert.equal(f.s.url,undefined); assert.equal(f.s.adapter,null); });
+test('concurrent error events do not start duplicate renewal', async () => { let resolve; const f=fixture({youtube:null,fetchLink:()=>new Promise(r=>resolve=r)}); const request=f.s.start(); await f.s.fail('network'); resolve(media(1)); await request; assert.equal(f.s.refreshes,0); });
+test('autoplay denial is not media failure', async () => { const f=fixture(); await f.s.start(); f.s.ready({...f.adapter,play:async()=>{const e=Error();e.name='NotAllowedError';throw e;}},100); await f.s.play(); assert.equal(f.s.provider,'youtube'); assert.equal(f.calls(),0); assert.match(f.views.at(-1).message,/Press Play/); });
+test('authorization failure does not bypass access via fallback', async () => { const f=fixture({youtube:null,fetchLink:async()=>{const e=Error();e.status=403;throw e;}}); await f.s.start(); assert.equal(f.s.state,'failed'); assert.match(f.views.at(-1).message,/access/); });
+test('link identity mismatch is rejected', async () => { const f=fixture({youtube:null,fetchLink:async()=>media(2)}); await f.s.start(); assert.equal(f.s.state,'failed'); });
+test('disposal aborts fetch and prevents later playback', async () => { let signal; const f=fixture({youtube:null,fetchLink:async p=>{signal=p.signal;return media(1);}}); await f.s.start(); f.s.dispose(); assert.equal(signal.aborted,true); f.s.ready(f.adapter,100); assert.equal(f.s.adapter,null); });
+test('YouTube identity parser rejects foreign domains and supports canonical forms', () => { assert.equal(youtubeId('https://youtu.be/abcdefghijk'),'abcdefghijk'); assert.equal(youtubeId('https://youtube.com/shorts/abcdefghijk'),'abcdefghijk'); assert.equal(youtubeId('https://evil.example/watch?v=abcdefghijk'),null); });

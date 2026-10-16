@@ -1,0 +1,38 @@
+{
+  "checks": [
+    {
+      "video_id": 1168,
+      "intended_seconds": 0,
+      "duration": 1522.84,
+      "observed_seconds": 0,
+      "ready_state": 4,
+      "media_error": null,
+      "seek_verified": true,
+      "playing_progress": true,
+      "renewal_http": 200,
+      "renewal_position_preserved": true
+    },
+    {
+      "video_id": 863,
+      "intended_seconds": 368.569,
+      "duration": 890.2,
+      "observed_seconds": 368.569,
+      "ready_state": 1,
+      "media_error": null,
+      "seek_verified": true
+    },
+    {
+      "video_id": 1105,
+      "intended_seconds": 707.687,
+      "duration": 2118.84,
+      "observed_seconds": 707.687,
+      "ready_state": 1,
+      "media_error": null,
+      "seek_verified": true
+    }
+  ],
+  "page_error_names": [],
+  "login_status": 200,
+  "cached_link_same_generation": true,
+  "guest_http": 401
+}

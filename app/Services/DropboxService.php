@@ -365,58 +365,22 @@ class DropboxService
     /**
      * Get a temporary download link for a file
      */
-    public function getTemporaryLink($filePath)
+    public function getTemporaryLink($filePath, bool $detailed = false)
     {
-        $token = $this->getAccessToken();
-        $headers = $this->getApiHeaders();
-        
-        Log::info("Dropbox getTemporaryLink starting", [
-            'filePath' => $filePath,
-            'hasToken' => !empty($token),
-            'headers' => array_keys($headers)
-        ]);
-        
         try {
-            $response = Http::withToken($token)
-                ->withOptions(['verify' => false])
-                ->withHeaders($headers)
-                ->post('https://api.dropboxapi.com/2/files/get_temporary_link', [
-                    'path' => $filePath
-                ]);
-            
-            Log::info("Dropbox API response", [
-                'filePath' => $filePath,
-                'status' => $response->status(),
-                'successful' => $response->successful()
-            ]);
-            
-            if ($response->successful()) {
-                $data = $response->json();
-                $link = $data['link'] ?? null;
-                
-                Log::info("Dropbox link retrieved", [
-                    'filePath' => $filePath,
-                    'hasLink' => !empty($link),
-                    'metadata' => $data['metadata'] ?? null
-                ]);
-                
-                return $link;
-            }
-            
-            Log::error("Dropbox get_temporary_link failed", [
-                'filePath' => $filePath,
-                'status' => $response->status(),
-                'body' => $response->body()
-            ]);
-            return null;
-            
-        } catch (\Exception $e) {
-            Log::error("Dropbox getTemporaryLink exception", [
-                'filePath' => $filePath,
-                'error' => $e->getMessage()
-            ]);
-            return null;
+            $response=Http::withToken($this->getAccessToken())->withHeaders($this->getApiHeaders())
+                ->connectTimeout(5)->timeout(20)->withOptions(['verify'=>true])
+                ->post('https://api.dropboxapi.com/2/files/get_temporary_link',['path'=>$filePath]);
+            if ($response->successful()) return $response->json('link');
+            if ($detailed && $response->status()===409 && str_contains((string)$response->json('error_summary'),'not_found')) throw new \DomainException('media_missing',404);
+            if ($detailed && in_array($response->status(),[401,403],true)) throw new \DomainException('provider_access',503);
+            Log::warning('Dropbox temporary link failed',['status'=>$response->status()]);
+        } catch (\DomainException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::warning('Dropbox temporary link failed',['exception_type'=>get_class($e)]);
         }
+        return null;
     }
 
     /**

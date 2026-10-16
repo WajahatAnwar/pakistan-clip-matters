@@ -1,0 +1,10 @@
+{
+  "same_video_transcript_seek": {
+    "intended_seconds": 15.757,
+    "observed_seconds": 15.757
+  },
+  "same_url_renewal_preserves_position": true,
+  "negative_visible_error": true,
+  "beyond_duration_visible_error": true,
+  "repeated_navigation_identity_correct": true
+}

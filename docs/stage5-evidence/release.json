@@ -1,0 +1,16 @@
+{
+  "release": "stage5-20261016",
+  "base_head": "eaaed2f6f908756ae2276bd91f080032f1558889",
+  "files": {
+    "app/Http/Controllers/VideoController.php": "21db00d4d9d65ea19a81572c299f9be10b7c3d0b92d729a047306edf73d2dc2b",
+    "app/Services/DropboxService.php": "c481d9ae380890a55a0b8ae8fd21316ed5d18e3c363f7c74ac56652aeda077b1",
+    "routes/web.php": "ddf168512b39daf2557a5386d840799e89ee802072e0ca2178b8fb2459a464c3",
+    "resources/js/Pages/UserSide/MainVideoPage/index.jsx": "27b6040ea7082ee9b41eb5c64578502605d2a180e89a1177b6a1c0ade782c85a",
+    "resources/js/Pages/UserSide/SearchedPage.jsx": "6fcc51cb6af4d4ff78723985da872b4120074edbcdb44f0845d285a34f34f020",
+    "resources/js/components/ReliableVideoPlayer.jsx": "d1ce2f94b77edd7e7f92e3ef01aca88b47da62ef19e54518b9c36b46a313fbf0",
+    "resources/js/utils/playbackSession.js": "0618766e602c3659b59abbc42023f51d0ab06605299200c63aeb33ce40b2aa7f",
+    "tests/js/playbackSession.test.mjs": "6fd1feec3bb8121ad74ee4f31db8cf53a6cf3453cfa6cb9bde9ae8164c546e72",
+    "tests/Feature/PlaybackMediaTest.php": "9a815d9a788da8ce2cb0b024e6a7524683397546dc6e1cabf51fbbc914b1d162"
+  },
+  "asset_manifest_sha256": "cec6bafbbf57ab634dc3749dc9e49bb149f300eb481d9fadb79098f68f66abdc"
+}

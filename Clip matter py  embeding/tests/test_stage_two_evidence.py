@@ -58,8 +58,9 @@ class StageTwoEvidenceTest(unittest.TestCase):
             return {'required_facets': ['students', 'fees'], 'passages': [
                 {'index': 0, 'score': 1, 'complete': True,
                  'evidence': {'students': 'Students', 'fees': 'high education fees'}}]}
-        with self.assertRaises(ValidationUnavailable):
-            validate_passages('students high fees', [passage(1, 'Students enjoy the library.', video_title='high education fees')], bad)
+        results, meta = validate_passages('students high fees', [passage(1, 'Students enjoy the library.', video_title='high education fees')], bad)
+        self.assertEqual([], results)
+        self.assertEqual('partial', meta['status'])
 
     def test_wrong_explicit_speaker_rejected_before_provider(self):
         calls = []
@@ -343,6 +344,9 @@ class StageTwoEvidenceTest(unittest.TestCase):
             result=judgments(*args)
             for item in result['passages']:item['evidence']={}
             return result
-        with self.assertRaises(ValidationUnavailable) as caught:
-            validate_passages('education fees',[passage(1),passage(2)],judge)
-        self.assertEqual('missing_facet_evidence',caught.exception.reason)
+        results, meta = validate_passages('education fees',[passage(1),passage(2)],judge)
+        self.assertEqual([], results)
+        self.assertEqual('partial', meta['status'])
+        self.assertTrue(meta['retryable'])
+        self.assertIsNone(meta['provider_failure'])
+        self.assertEqual(2, meta['invalid_evidence_count'])

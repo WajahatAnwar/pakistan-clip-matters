@@ -1176,7 +1176,7 @@ Route::get('/api/search', [VideoController::class, 'embeddingsSearch'])->name('a
 
 
 Route::post('youtube/validate', [YoutubeController::class, 'validateYouTubeUrl'])->name('user.youtube.validate');
-Route::post('/videoLink',[VideoController::class,'dropboxVideoTemporaryLink'])->name('video.link');
+Route::post('/videoLink',[VideoController::class,'dropboxVideoTemporaryLink'])->middleware(['auth','throttle:30,1'])->name('video.link');
 Route::post('/getVideoDetails',[YoutubeController::class,'getVideoDetails'])->name('user.youtube.details');
 
 // ========================================
