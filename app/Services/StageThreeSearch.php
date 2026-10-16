@@ -54,10 +54,10 @@ final class StageThreeSearch
             ]);
         }
         $payload = array_intersect_key($input,array_flip(['query','words','video_id','language','time_range',
-            'filter_year','filter_month','filter_date','max_scanned','transcript_contract']));
+            'filter_year','filter_month','filter_date','max_scanned','transcript_contract','summary_candidates']));
         $payload += ['query'=>$query,'search_mode'=>'simple','filter_type'=>$type,'top_k'=>1000];
         $summaryLimited = false;
-        if ($type === 'summary') {
+        if ($type === 'summary' && !array_key_exists('summary_candidates', $payload)) {
             $candidates = [];
             (clone $base)->select(['id','summary','summary_english','summary_urdu'])->chunkById(200,
                 function ($videos) use (&$candidates,&$summaryLimited,$query) {
@@ -82,6 +82,9 @@ final class StageThreeSearch
                 return response()->json(['success'=>false,
                     'message'=>is_array($detail)?($detail['message']??'Search unavailable. Please retry.'):($detail?:'Search unavailable. Please retry.'),
                     'retryable'=>is_array($detail)?($detail['retryable']??$response->serverError()):$response->serverError(),
+                    'code'=>is_array($detail)?($detail['code']??'search_service_error'):'search_service_error',
+                    'diagnostic_id'=>is_array($detail)?($detail['diagnostic_id']??null):null,
+                    'status_code'=>$response->status(),
                 ],$response->status());
             }
             $data = $response->json(); $contract = $data['search_contract'] ?? null;
@@ -134,6 +137,7 @@ final class StageThreeSearch
             'has_next_page'=>$page*$perPage<$total,'has_prev_page'=>$page>1,
             'search_status'=>$contract['status'],'retryable'=>$contract['retryable']??false,
             'search_metadata'=>['search_contract'=>$contract,'passage_validation'=>$contract['passage_validation']??null,
+                'status'=>$contract['status'], 'retryable'=>$contract['retryable']??false,
                 'page_counts'=>['matching_videos'=>count($groups),'displayed_passages'=>$groups->sum('passage_count'),
                     'matched_transcript_occurrences'=>$occurrences===null?null:$groups->sum('occurrence_count')]],
         ],200,[],JSON_UNESCAPED_UNICODE);

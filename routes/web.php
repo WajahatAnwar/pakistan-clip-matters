@@ -1210,3 +1210,7 @@ Route::post('/verify-creds-password', function (Request $request) {
 })->name('verify.creds.password');
 
 require __DIR__ . '/auth.php';
+
+Route::post('/api/embeddings/callback', [\App\Http\Controllers\EmbeddingCallbackController::class, 'store'])
+    ->withoutMiddleware([\App\Http\Middleware\CheckUserStatus::class, \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class])
+    ->name('embeddings.callback');

@@ -258,7 +258,7 @@ export default function SearchPage() {
         // This allows users to search any content when toggle is active
         if (query) {
           requestBody.query = query;
-          requestBody.words = splitToCleanWords(query, 2);
+          // Forward the original query without repeating extracted words.
         } else {
           // No custom query - default to searching for Hafiz Naeem speaker segments
           requestBody.search_type = 'speaker';
@@ -268,7 +268,7 @@ export default function SearchPage() {
         // ── REGULAR SEARCH ──
         if (query) {
           requestBody.query = query;
-          requestBody.words = splitToCleanWords(query, 2);
+          // Forward the original query without repeating extracted words.
         }
         
         if (selectedSearchType === 'language') {

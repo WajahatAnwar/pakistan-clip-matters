@@ -18,7 +18,7 @@ class GenerateVideoEmbedding implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $videoId;
-    public $runId;
+    public string $runId;
     
     /**
      * The number of seconds the job can run before timing out.
@@ -54,7 +54,7 @@ class GenerateVideoEmbedding implements ShouldQueue
      */
     public function handle()
     {
-        $this->runId ??= (string) Str::uuid();
+        if (!isset($this->runId)) $this->runId = (string) Str::uuid();
         // Fetch the video model - if it doesn't exist, delete this job
         $video = Video::find($this->videoId);
         
@@ -71,16 +71,20 @@ class GenerateVideoEmbedding implements ShouldQueue
             [
                 'status' => 'pending',
                 'qdrant_collection' => 'video_transcript_segments',
-                'vector_dimensions' => 3072, // OpenAI text-embedding-3-large
+                'vector_dimensions' => (int) config('services.embedding.dimensions', 3072),
             ]
         );
 
+        // A retry from an older generation must not reactivate a newer run.
         if ($this->attempts() > 1 && $embedding->active_run_id && $embedding->active_run_id !== $this->runId) {
-            Log::warning('Stale indexing retry skipped', ['video_id' => $video->id, 'run_id' => $this->runId]);
             return;
         }
-        // Mark as processing
-        $embedding->markAsProcessing();
+        $embedding->update([
+            'active_run_id' => $this->runId, 'queued_job_ids' => [],
+            'status' => 'processing', 'started_at' => now(), 'completed_at' => null,
+            'error_message' => null, 'failed_at' => null, 'submitted_at' => null,
+            'vector_dimensions' => (int) config('services.embedding.dimensions', 3072),
+        ]);
 
         try {
             // Parse all video data
@@ -97,7 +101,7 @@ class GenerateVideoEmbedding implements ShouldQueue
             );
 
             if (empty($enrichedSegments)) {
-                throw new \Exception("No valid segments with text found after mapping data");
+                throw new \Exception("No valid segments with text found after merging data");
             }
 
             // Add segment_index to each segment for consistent point IDs across batches
@@ -115,11 +119,10 @@ class GenerateVideoEmbedding implements ShouldQueue
             Log::info("Using Python embedding service URL: " . $pythonServiceUrl);
 
             // Process in batches — 500 segments per batch keeps payload under 5MB
-            // Python service handles batch_info to only delete existing data on batch 1
-            $totalSegmentsEmbedded = 0;
-            $collectionName = 'video_transcript_segments';
+            // All batches share a generation. Python keeps the old index until commit.
+            $queuedJobIds = [];
             $batchSize = 500;
-            $totalBatches = ceil(count($enrichedSegments) / $batchSize);
+            $totalBatches = (int) ceil(count($enrichedSegments) / $batchSize);
             
             Log::info("Processing video in batches", [
                 'video_id' => $video->id,
@@ -128,10 +131,7 @@ class GenerateVideoEmbedding implements ShouldQueue
                 'total_batches' => $totalBatches
             ]);
 
-            if ($embedding->active_run_id !== $this->runId) $embedding->update([
-                'active_run_id' => $this->runId, 'expected_batches' => $totalBatches,
-                'batch_acknowledgments' => [], 'segments_count' => 0,
-            ]);
+            $embedding->update(['expected_batches' => $totalBatches, 'batch_acknowledgments' => []]);
 
             for ($batchNum = 0; $batchNum < $totalBatches; $batchNum++) {
                 $offset = $batchNum * $batchSize;
@@ -140,11 +140,12 @@ class GenerateVideoEmbedding implements ShouldQueue
                 // Send all metadata the Python service needs for enriched Qdrant payload.
                 // No speakers_transcript or diarization_segments (unused, bloats payload by MBs)
                 $videoData = [
-                    'embedding_model' => config('services.embedding.model'),
-                    'embedding_dimensions' => config('services.embedding.dimensions'),
-                    'run_id' => $this->runId,
-                    'timestamp_unit' => 'seconds',
                     'video_id' => $video->id,
+                    'run_id' => $this->runId,
+                    'embedding_model' => config('services.embedding.model', 'text-embedding-3-large'),
+                    'embedding_dimensions' => (int) config('services.embedding.dimensions', 3072),
+                    'timestamp_unit' => 'seconds',
+                    'webhook_url' => config('services.embedding.callback_url') ?: route('embeddings.callback'),
                     'video_title' => $video->title ?? '',
                     'video_filename' => $video->filename ?? '',
                     'youtube_url' => $video->youtube_url ?? '',
@@ -167,12 +168,6 @@ class GenerateVideoEmbedding implements ShouldQueue
                     'video_summary' => $video->summary ?? '',
                     'video_summary_english' => $video->summary_english ?? '',
                     'video_summary_urdu' => $video->summary_urdu ?? '',
-                    'webhook_url' => route('api.webhooks.qdrant', [
-                        'video_id' => $video->id,
-                        'batch' => $batchNum + 1,
-                        'total' => $totalBatches,
-                        'run_id' => $this->runId
-                    ]),
                 ];
 
                 Log::info("Sending batch to Python service", [
@@ -187,7 +182,7 @@ class GenerateVideoEmbedding implements ShouldQueue
                 $maxRetries = 3;
                 for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
                     try {
-                        $response = Http::timeout(300) // Increased to 5 minutes to prevent broken pipes during heavy embedding generation
+                        $response = Http::timeout(600)
                             ->withHeaders([
                                 'X-API-Key' => $apiKey,
                                 'Content-Type' => 'application/json',
@@ -228,59 +223,34 @@ class GenerateVideoEmbedding implements ShouldQueue
                 }
 
                 $result = $response->json();
-                $segmentsEmbedded = $result['segments_embedded'] ?? 0;
-                $totalSegmentsEmbedded += $segmentsEmbedded;
-                $collectionName = $result['collection'] ?? $collectionName;
-
-                Log::info("Batch processed successfully", [
-                    'video_id' => $video->id,
-                    'batch' => $batchNum + 1,
-                    'segments_embedded' => $segmentsEmbedded,
-                    'total_embedded_so_far' => $totalSegmentsEmbedded
-                ]);
-                
-                // Brief pause between batches to avoid overwhelming Railway ingress
-                if ($batchNum + 1 < $totalBatches) {
-                    sleep(2);
+                if ($response->status() !== 202 || ($result['status'] ?? null) !== 'queued' || empty($result['job_id'])) {
+                    throw new \RuntimeException('Embedding service did not acknowledge the queued batch');
                 }
+                $queuedJobIds[] = $result['job_id'];
+                VideoEmbedding::where('video_id', $video->id)->where('active_run_id', $this->runId)
+                    ->update(['queued_job_ids' => json_encode($queuedJobIds)]);
             }
-
-            Log::info("All batches queued successfully for background processing", [
-                'video_id' => $video->id,
-                'total_batches_queued' => $totalBatches
-            ]);
-
-            // NOTE: We no longer mark the embedding as completed here. 
-            // The python background worker will hit the webhook to mark it completed.
+            // 202 acknowledges submission only. The authenticated generation callback
+            // is the sole authority for completed status and the final segment count.
+            VideoEmbedding::where('video_id', $video->id)->where('active_run_id', $this->runId)
+                ->update(['submitted_at' => now()]);
+            Log::info('Embedding generation submitted', ['video_id' => $video->id,
+                'run_id' => $this->runId, 'queued_batches' => count($queuedJobIds)]);
 
         } catch (\Exception $e) {
             Log::error("Failed to generate embedding for video ID " . $video->id . ": " . $e->getMessage());
 
             // Mark embedding as failed
-            $embedding->markAsFailed($e->getMessage());
+            VideoEmbedding::where('video_id', $video->id)->where('active_run_id', $this->runId)
+                ->where('status', '!=', 'completed')->update([
+                    'status' => 'failed', 'error_message' => $e->getMessage(), 'failed_at' => now(),
+                ]);
             
             // Only re-throw for critical errors, not for data validation issues
             if (!str_contains($e->getMessage(), 'identification_data')) {
                 throw $e;
             }
         }
-    }
-
-    /**
-     * Enrich identification segments with text from speakers_data
-     * 
-     * This merges the speaker identification (who spoke when) with the actual text content
-     * by matching time ranges
-     */
-    /**
-     * Map speakers_data directly to Qdrant segments
-     */
-    /**
-     * Check if two time ranges overlap
-     */
-    private function hasTimeOverlap($start1, $end1, $start2, $end2)
-    {
-        return max($start1, $start2) < min($end1, $end2);
     }
 
     /**
@@ -330,7 +300,8 @@ class GenerateVideoEmbedding implements ShouldQueue
 
         // Mark embedding as failed if it exists
         $embedding = VideoEmbedding::where('video_id', $this->videoId)->first();
-        if ($embedding && $embedding->active_run_id === $this->runId) {
+        if ($embedding && isset($this->runId) && $embedding->active_run_id === $this->runId
+            && $embedding->status !== 'completed') {
             $embedding->markAsFailed($exception->getMessage());
         }
     }

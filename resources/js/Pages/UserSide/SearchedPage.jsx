@@ -133,46 +133,6 @@ export default function SearchedPage() {
   const [validationRetryError, setValidationRetryError] = useState(null);
   const [retryingValidation, setRetryingValidation] = useState(false);
 
-  // Deduplicate segments within each video result by segment_id and time overlap
-  const deduplicateSegments = (videoResults) => {
-    if (semanticPresentation) return preservePassages(videoResults);
-    return videoResults.map(result => {
-      if (!result.segments || result.segments.length <= 1) return result;
-      
-      // 1. Deduplicate by segment_id
-      const byId = new Map();
-      for (const seg of result.segments) {
-        // Fallback key if segment_id is missing
-        const key = seg.segment_id || (seg.start_time + '-' + seg.end_time);
-        const existing = byId.get(key);
-        if (!existing || (seg.score || 0) > (existing.score || 0)) {
-          byId.set(key, seg);
-        }
-      }
-      
-      // 2. Filter time overlaps
-      const sorted = Array.from(byId.values()).sort((a, b) => (a.start_time || 0) - (b.start_time || 0));
-      const finalSegments = [];
-      for (const seg of sorted) {
-        if (finalSegments.length === 0) {
-          finalSegments.push(seg);
-        } else {
-          const last = finalSegments[finalSegments.length - 1];
-          // Overlap condition: segment starts before previous segment ends
-          if ((seg.start_time || 0) < (last.end_time || 0)) {
-            if ((seg.score || 0) > (last.score || 0)) {
-              finalSegments.pop();
-              finalSegments.push(seg);
-            }
-          } else {
-            finalSegments.push(seg);
-          }
-        }
-      }
-      return { ...result, segments: finalSegments, match_count: finalSegments.length };
-    });
-  };
-
   // Handle videos data - now comes directly as array from session
   const parsedVideos = useMemo(() => {
     if (!videos) return [];
@@ -184,19 +144,7 @@ export default function SearchedPage() {
     } else {
       return [];
     }
-    const deduped = deduplicateSegments(parsed);
-    if (semanticPresentation) return deduped;
-    // Sort: tag matches first, then semantic matches (with actual segments), then title-only cards after, both sorted by match_count desc
-    return deduped.sort((a, b) => {
-      const aIsTagMatch = a.match_types && a.match_types.includes('tag_match') ? 1 : 0;
-      const bIsTagMatch = b.match_types && b.match_types.includes('tag_match') ? 1 : 0;
-      if (aIsTagMatch !== bIsTagMatch) return bIsTagMatch - aIsTagMatch; // tag matches to top
-
-      const aIsTitleOnly = (!a.segments || a.segments.length === 0) ? 1 : 0;
-      const bIsTitleOnly = (!b.segments || b.segments.length === 0) ? 1 : 0;
-      if (bIsTitleOnly !== aIsTitleOnly) return aIsTitleOnly - bIsTitleOnly;
-      return (b.match_count || 0) - (a.match_count || 0);
-    });
+    return preservePassages(parsed);
   }, [videos, semanticPresentation]);
 
   const retryPassageValidation = async () => {
@@ -457,8 +405,15 @@ export default function SearchedPage() {
         data = await response.json();
       }
 
-      if (!data?.success) throw new Error(data?.message || 'Unable to load more passages. Please retry the search.');
-      setValidationRetryError(null);
+      if (!data?.success) {
+        if (data?.status_code === 409 || ['search_session_expired', 'search_session_mismatch'].includes(data?.code)) {
+          setHasMore(false); setCursor(null); setSearchSessionId(null);
+          sessionStorage.removeItem('search_session_id');
+        }
+        throw new Error(data?.message || 'Unable to load more passages. Please retry the search.');
+      }
+      setValidationRetryError(data.search_metadata?.status === 'partial'
+        ? 'These results are incomplete. Retry the search to check for more verified passages.' : null);
       console.log('✅ View More response:', data);
 
       if (data.success && data.grouped_by_video) {
@@ -475,9 +430,7 @@ export default function SearchedPage() {
           existingVideoIds.add(vid);
           return true;
         });
-        const updatedResults = semanticPresentation
-          ? appendSemanticPage(loadedResults, newResults)
-          : [...loadedResults, ...uniqueNewResults];
+        const updatedResults = appendSemanticPage(loadedResults, newResults);
 
         // Handle both pagination types
         const newCursor = data.cursor?.next || null;

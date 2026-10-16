@@ -34,7 +34,7 @@ class StageOneIndexingTest extends TestCase
         \Illuminate\Support\Facades\Bus::fake();
         $this->artisan('search:recover-transcripts',['--id'=>[$video->id],'--dry-run'=>true])->assertSuccessful();
         \Illuminate\Support\Facades\Bus::assertNothingDispatched();
-        \Illuminate\Support\Facades\Http::fake(['*'=>\Illuminate\Support\Facades\Http::response(['status'=>'queued'],202)]);
+        \Illuminate\Support\Facades\Http::fake(['*'=>\Illuminate\Support\Facades\Http::response(['status'=>'queued','job_id'=>'rq-fixture'],202)]);
         (new \App\Jobs\GenerateVideoEmbedding($video->id))->handle();
         \Illuminate\Support\Facades\Http::assertSent(fn($request)=>
             $request['timestamp_unit']==='seconds'

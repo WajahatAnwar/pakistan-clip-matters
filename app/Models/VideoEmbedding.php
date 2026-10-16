@@ -12,6 +12,7 @@ class VideoEmbedding extends Model
     protected $fillable = [
         'video_id',
         'active_run_id', 'expected_batches', 'batch_acknowledgments',
+        'queued_job_ids', 'submitted_at',
         'qdrant_collection',
         'segments_count',
         'vector_dimensions',
@@ -32,6 +33,7 @@ class VideoEmbedding extends Model
 
     protected $casts = [
         'batch_acknowledgments' => 'array',
+        'queued_job_ids' => 'array', 'submitted_at' => 'datetime',
         'expected_batches' => 'integer',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',

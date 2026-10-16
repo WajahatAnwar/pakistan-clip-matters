@@ -59,10 +59,12 @@ return [
     ],
 
     'embedding' => [
-        'url' => env('EMBEDDING_SERVICE_URL', 'https://web-production-935af.up.railway.app'),
+        'url' => env('EMBEDDING_SERVICE_URL', env('PYTHON_EMBEDDING_SERVICE_URL', 'https://web-production-935af.up.railway.app')),
         'api_key' => env('EMBEDDING_API_KEY', ''),
-        'model' => env('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-large'),
-        'dimensions' => (int) env('EMBEDDING_DIMENSION', 3072),
+        'model' => env('EMBEDDING_MODEL', env('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-large')),
+        'dimensions' => (int) env('EMBEDDING_DIMENSIONS', env('EMBEDDING_DIMENSION', 3072)),
+        'search_timeout' => (int) env('EMBEDDING_SEARCH_TIMEOUT', 120),
+        'callback_url' => env('EMBEDDING_CALLBACK_URL'),
     ],
 
     'transcript_api' => [
