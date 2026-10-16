@@ -251,6 +251,7 @@ class VideoController extends Controller
                 'youtube_videos' => $youtubeVideos,
                 'dropbox_videos' => $dropboxVideos,
                 'embedded_videos' => $embeddedVideos,
+                'operational_metrics' => \App\Services\OperationalMetrics::current((float)$totalSizeMB),
                 'total_size_mb' => round($totalSizeMB, 2),
                 'uploaded_size_mb' => round($uploadedSizeMB, 2),
                 'average_video_size_mb' => $avgVideoSize,

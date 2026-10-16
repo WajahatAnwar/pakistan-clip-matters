@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 Schedule::command('videos:fail-stale-processing')
     ->hourly()
     ->withoutOverlapping();
+
+Schedule::command('operations:measure-generated-storage')
+    ->hourly()
+    ->withoutOverlapping();

@@ -1,0 +1,275 @@
+{
+  "status": "completed",
+  "videos": [
+    {
+      "video_id": 1019,
+      "status": "completed",
+      "segments": 141,
+      "arabic_characters_in_english": 0,
+      "timing_speaker_metadata_preserved": true,
+      "translated_word_timestamps": "empty; not fabricated",
+      "completed_at_utc": "2026-10-16T11:55:26+00:00",
+      "typesense_sync": "verified"
+    },
+    {
+      "video_id": 919,
+      "status": "completed",
+      "segments": 155,
+      "arabic_characters_in_english": 0,
+      "timing_speaker_metadata_preserved": true,
+      "translated_word_timestamps": "empty; not fabricated",
+      "completed_at_utc": "2026-10-16T11:55:26+00:00",
+      "typesense_sync": "verified"
+    },
+    {
+      "video_id": 1105,
+      "status": "completed",
+      "segments": 176,
+      "arabic_characters_in_english": 0,
+      "timing_speaker_metadata_preserved": true,
+      "translated_word_timestamps": "empty; not fabricated",
+      "completed_at_utc": "2026-10-16T11:55:26+00:00",
+      "typesense_sync": "verified"
+    },
+    {
+      "video_id": 1129,
+      "status": "completed",
+      "segments": 208,
+      "arabic_characters_in_english": 0,
+      "timing_speaker_metadata_preserved": true,
+      "translated_word_timestamps": "empty; not fabricated",
+      "completed_at_utc": "2026-10-16T11:55:27+00:00",
+      "typesense_sync": "verified"
+    },
+    {
+      "video_id": 1079,
+      "status": "completed",
+      "segments": 355,
+      "arabic_characters_in_english": 0,
+      "timing_speaker_metadata_preserved": true,
+      "translated_word_timestamps": "empty; not fabricated",
+      "completed_at_utc": "2026-10-16T11:55:27+00:00",
+      "typesense_sync": "verified"
+    }
+  ],
+  "total_segments": 1035,
+  "provider": "existing configured OpenAI gpt-4o-mini",
+  "cleanup": {
+    "deleted_files": 42,
+    "deleted_bytes": 3249535897,
+    "files": [
+      {
+        "filename": "audio_1770896422_698dbc26872ef.mp3",
+        "bytes": 67919733,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1776681643_69e602ab148c5.mp3",
+        "bytes": 93769971,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1776682343_69e60567f1842.mp3",
+        "bytes": 93769971,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1776690034_69e623728c5b9.mp3",
+        "bytes": 49115147,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1776930585_69e9cf198daf0.mp3",
+        "bytes": 117113393,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788361044_6a9839547d6eb.mp3",
+        "bytes": 2347929,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788366723_6a984f8345aa9.mp3",
+        "bytes": 275897,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788366731_6a984f8b20844.mp3",
+        "bytes": 326052,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788366742_6a984f9632814.mp3",
+        "bytes": 151136,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788367760_6a9853907e20e.mp3",
+        "bytes": 226369,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788367767_6a985397c802a.mp3",
+        "bytes": 450813,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788367780_6a9853a484eed.mp3",
+        "bytes": 338591,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788367798_6a9853b66d5b1.mp3",
+        "bytes": 563035,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788367812_6a9853c4c6775.mp3",
+        "bytes": 463351,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788367825_6a9853d1dd4c1.mp3",
+        "bytes": 313513,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788367840_6a9853e060f19.mp3",
+        "bytes": 463351,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788446362_6a99869ac71a5.mp3",
+        "bytes": 326052,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788446391_6a9986b725847.mp3",
+        "bytes": 126685,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788446407_6a9986c771ef5.mp3",
+        "bytes": 276524,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788446776_6a998838e67ad.mp3",
+        "bytes": 388746,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788446796_6a99884ccd0e0.mp3",
+        "bytes": 238907,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788446815_6a99885fc1758.mp3",
+        "bytes": 275897,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788449089_6a9991415d2e8.mp3",
+        "bytes": 263985,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788449090_6a99914267f8d.mp3",
+        "bytes": 476517,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788449111_6a999157aee3d.mp3",
+        "bytes": 550496,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788449113_6a99915915766.mp3",
+        "bytes": 426362,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788783107_6a9eaa032b8f7.mp3",
+        "bytes": 388746,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788788793_6a9ec039494f5.mp3",
+        "bytes": 949856,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788788798_6a9ec03ebd03e.mp3",
+        "bytes": 613817,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788788816_6a9ec050b2305.mp3",
+        "bytes": 188752,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788851605_6a9fb595a2313.mp3",
+        "bytes": 151136,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788851626_6a9fb5aa21254.mp3",
+        "bytes": 750489,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "audio_1788851651_6a9fb5c3d7f64.mp3",
+        "bytes": 438901,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1769087297_69722141d5ae4.mp4",
+        "bytes": 560795277,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1769087442_697221d25144d.mp4",
+        "bytes": 560795277,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1769088230_697224e64ddaa.mp4",
+        "bytes": 560795277,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1769761490_697c6ad286682.mp4",
+        "bytes": 221042746,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1788371180_6a9860ecbaada.MOV",
+        "bytes": 36888576,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1788384464_6a9894d047029.mp4",
+        "bytes": 35889152,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1788435477_6a995c15e8c6a.mp4",
+        "bytes": 499118080,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1788435494_6a995c26a85e8.mp4",
+        "bytes": 339406848,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      },
+      {
+        "filename": "video_1788435536_6a995c50a3293.mp4",
+        "bytes": 364544,
+        "outcome": "deleted_unreferenced_old_temporary_media"
+      }
+    ]
+  },
+  "discarded_completed_checkpoint_bytes": 344148,
+  "rollback_backup_directory": "/home/1618941.cloudwaysapps.com/ptfmnnpjhn/public_html/storage/app/private/operations/english-repair-remaining"
+}

@@ -1,0 +1,7 @@
+{
+  "Clip matter py  embeding/Dockerfile": "4b7ba2ad3998846aa3b8123f65496f7efea3e4f37f064386ddf09c705301f085",
+  "Clip matter py  embeding/transcript_search_contract.py": "6f8a8a6ffe8086f6a81423aa2427d7eec0565427363cabaa4e0cacfa34b98ea6",
+  "Clip matter py  embeding/index_operations.py": "3dd79d7ffdb9c293e21436a5b1b60debce3e1aeccefdaeb14d72b0452895904f",
+  "Clip matter py  embeding/embeddings_test.py": "eaaddcb63a9312d5ce7a9639a6941ba6e141ef544563847b8e510a82a6a84fe0",
+  "Clip matter py  embeding/tests/test_index_operations.py": "82c2e9f08f3ac7e3e9514aab0e91859c86144177af63c669b8a46a298c265277"
+}

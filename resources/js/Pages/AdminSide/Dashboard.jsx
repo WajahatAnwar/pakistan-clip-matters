@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import OperationalOverview from './OperationalOverview';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Grid, Card, Typography, Box, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, Button, Alert, CircularProgress, IconButton } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -267,15 +268,16 @@ export default function Dashboard({ connectionStatus }) {
     // Calculate stats from API data
     const stats = dashboardStats ? [
         {
-            title: t('dashboard.totalVideosUploaded'),
+            title: 'Registered videos',
             value: dashboardStats.stats.total_videos.toString(),
             icon: <PeopleOutlinedIcon sx={{ fontSize: 20, color: '#22C55E' }} />,
             iconBg: 'rgba(34, 197, 94, 0.1)'
         },
         {
-            title: t('dashboard.storageUsed'),
-            value: `${(dashboardStats.stats.total_size_mb / 1024).toFixed(2)}`,
-            unit: 'GB',
+            title: 'Source video storage',
+            value: dashboardStats.stats.operational_metrics?.source_storage_bytes != null
+              ? (dashboardStats.stats.operational_metrics.source_storage_bytes / 1e9).toFixed(2) : 'Not measured',
+            unit: dashboardStats.stats.operational_metrics?.source_storage_bytes != null ? 'GB' : '',
             icon: <StorageOutlinedIcon sx={{ fontSize: 20, color: '#22C55E' }} />,
             iconBg: 'rgba(34, 197, 94, 0.1)'
         },
@@ -293,7 +295,7 @@ export default function Dashboard({ connectionStatus }) {
             iconBg: 'rgba(34, 197, 94, 0.1)'
         },
         {
-            title: t('dashboard.videosWithEmbeddings'),
+            title: 'Completed embedding records',
             value: dashboardStats.stats.embedded_videos.toString(),
             icon: <TrackChangesOutlinedIcon sx={{ fontSize: 20, color: '#22C55E' }} />,
             iconBg: 'rgba(34, 197, 94, 0.1)'
@@ -397,6 +399,9 @@ export default function Dashboard({ connectionStatus }) {
                 )}
 
             <Grid container spacing={3} columns={12}>
+                {dashboardStats?.stats?.operational_metrics && <Grid item size={{ xs: 12 }}>
+                  <OperationalOverview stats={dashboardStats.stats} />
+                </Grid>}
                 {stats.map((stat, index) => (
                     <Grid item size={{ xs: 12, sm: 6, md: 4, lg: 4, xl: 4 }} key={index}>
                         <Card

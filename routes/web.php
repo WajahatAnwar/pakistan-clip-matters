@@ -909,9 +909,9 @@ Route::get('/cleanup-duplicate-videos', function (Request $request) {
 });
 
 /**
- * List available videos in Dropbox, compare with DB, auto-process new videos, and delete orphaned DB records
+ * List available videos in Dropbox, compare with DB, and optionally process new videos
  * - Checks for videos in Dropbox that aren't in DB (needs processing)
- * - Checks for videos in DB that aren't in Dropbox anymore (deletes them)
+ * - Reports missing source paths for review without deleting database records
  * Usage: GET /list-videos?auto_process=true
  */
 Route::get('/list-videos', function (Request $request) {
@@ -920,7 +920,7 @@ Route::get('/list-videos', function (Request $request) {
             return response()->json(['error' => 'Please login first'], 401);
         }
 
-        $videoService = new \App\Services\VideoProcessingService(auth()->user());
+        $videoService = app()->makeWith(\App\Services\VideoProcessingService::class, ['user'=>auth()->user()]);
         $dropboxVideos = $videoService->getAvailableVideos();
         Log::info("Found " . count($dropboxVideos) . " videos in Dropbox");
         // Get ALL videos from DB (no limit) for accurate comparison, fetching only needed columns to prevent OOM
@@ -938,45 +938,13 @@ Route::get('/list-videos', function (Request $request) {
             $dbVideoPaths[] = $video->dropbox_path;
         }
 
-        // Check for videos in DB that are no longer in Dropbox and delete them
+        // A missing/partial source listing is never authorization to delete records.
         $deletedVideos = [];
+        $sourceUnavailable = [];
         foreach ($userVideos as $video) {
-            if (!in_array($video->dropbox_path, $dropboxPaths)) {
-                try {
-                    Log::info("Deleting video from DB (no longer in Dropbox): {$video->dropbox_path}", [
-                        'video_id' => $video->id,
-                        'title' => $video->title
-                    ]);
-                    
-                    $deletedVideos[] = [
-                        'id' => $video->id,
-                        'title' => $video->title,
-                        'dropbox_path' => $video->dropbox_path,
-                        'status' => 'deleted'
-                    ];
-                    
-                    // Delete the video record from database
-                    $video->delete();
-                    
-                } catch (\Exception $e) {
-                    Log::error("Failed to delete video from DB: {$video->dropbox_path}", [
-                        'video_id' => $video->id,
-                        'error' => $e->getMessage()
-                    ]);
-                    
-                    $deletedVideos[] = [
-                        'id' => $video->id,
-                        'title' => $video->title,
-                        'dropbox_path' => $video->dropbox_path,
-                        'status' => 'failed',
-                        'error' => $e->getMessage()
-                    ];
-                }
-            }
-        }
-
-        if (!empty($deletedVideos)) {
-            Log::info("Deleted " . count(array_filter($deletedVideos, fn($v) => $v['status'] === 'deleted')) . " videos from DB that no longer exist in Dropbox");
+            if (!in_array($video->dropbox_path, $dropboxPaths, true)) $sourceUnavailable[] = [
+                'id'=>$video->id, 'status'=>'source_unavailable_requires_review',
+            ];
         }
 
         // Compare Dropbox videos with DB
@@ -1152,7 +1120,8 @@ Route::get('/list-videos', function (Request $request) {
             ],
             'needs_processing' => $needsProcessing,
             'already_processed' => $alreadyProcessed,
-            'deleted_videos' => !empty($deletedVideos) ? $deletedVideos : null,
+            'deleted_videos' => null,
+            'source_unavailable' => $sourceUnavailable,
             'synced_videos' => !$autoProcess ? $syncedVideos : null,
             'processing_results' => $autoProcess ? $processedVideos : null,
             'usage' => [
